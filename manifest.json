@@ -2,7 +2,7 @@
     "manifest_version": 3,
     "name": "Advanced Time Tracker",
     "version": "1.0.0",
-    "description": "Track effective viewing time across video, reading, and social sites with session-based limits and rest periods.",
+    "description": "Master your screen time with effective usage tracking, smart session limits, and mandatory rest periods. Stop doomscrolling today!",
     "permissions": [
         "storage",
         "alarms"
