@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time Tracker - Settings</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>⏱️ Time Tracker</h1>
+            <p class="subtitle">Manage your screen time effectively</p>
+        </header>
+
+        <!-- Today's Summary -->
+        <section class="card summary-card">
+            <h2>📊 Today's Usage</h2>
+            <div id="usageSummary" class="usage-grid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Category Settings -->
+        <section class="card">
+            <h2>📁 Categories</h2>
+            <div id="categoriesContainer">
+                <!-- Populated by JS -->
+            </div>
+            <button id="addCategoryBtn" class="btn btn-secondary">+ Add Category</button>
+        </section>
+
+        <!-- Edit Category Modal -->
+        <div id="categoryModal" class="modal hidden">
+            <div class="modal-backdrop"></div>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 id="modalTitle">Edit Category</h3>
+                    <button class="close-btn" id="closeModal">&times;</button>
+                </div>
+                <form id="categoryForm">
+                    <div class="form-group">
+                        <label for="categoryName">Name</label>
+                        <input type="text" id="categoryName" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="categoryType">Detection Type</label>
+                        <select id="categoryType">
+                            <option value="video">Video (tracks playback time)</option>
+                            <option value="reading">Reading (tracks visible + active)</option>
+                            <option value="social">Social (tracks scroll + interaction)</option>
+                            <option value="audio">Audio (tracks audio playback)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="categoryDomains">Domains (one per line)</label>
+                        <textarea id="categoryDomains" rows="4"
+                            placeholder="youtube.com&#10;vimeo.com&#10;netflix.com"></textarea>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="dailyLimit">Daily Limit (hours)</label>
+                            <input type="number" id="dailyLimit" min="0" step="0.5" value="2">
+                        </div>
+                        <div class="form-group">
+                            <label for="sessionDuration">Session Duration (min)</label>
+                            <input type="number" id="sessionDuration" min="0" step="5" value="30">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="sessionCount">Sessions per Day</label>
+                            <input type="number" id="sessionCount" min="1" max="20" value="4">
+                        </div>
+                        <div class="form-group">
+                            <label for="restDuration">Rest Between (min)</label>
+                            <input type="number" id="restDuration" min="0" step="5" value="10">
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="idleTimeout">Idle Timeout (seconds)</label>
+                        <input type="number" id="idleTimeout" min="10" max="300" value="30">
+                        <small>For reading/social: stop tracking after this idle time</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Forbidden Time Periods</label>
+                        <div id="forbiddenPeriods" class="periods-list">
+                            <!-- Populated by JS -->
+                        </div>
+                        <button type="button" id="addPeriodBtn" class="btn btn-small">+ Add Period</button>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="categoryEnabled" checked>
+                            <span>Enable tracking for this category</span>
+                        </label>
+                    </div>
+
+                    <div class="modal-actions">
+                        <button type="button" id="deleteCategory" class="btn btn-danger hidden">Delete</button>
+                        <div class="action-right">
+                            <button type="button" id="cancelModal" class="btn btn-secondary">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Save</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Data Management -->
+        <section class="card">
+            <h2>💾 Data</h2>
+            <div class="data-actions">
+                <button id="exportBtn" class="btn btn-secondary">Export Data</button>
+                <button id="resetTodayBtn" class="btn btn-warning">Reset Today</button>
+                <button id="clearAllBtn" class="btn btn-danger">Clear All Data</button>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>Advanced Time Tracker v1.0.0</p>
+        </footer>
+    </div>
+
+    <script src="options.js" type="module"></script>
+</body>
+
+</html>
