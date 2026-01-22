@@ -72,6 +72,15 @@ export function getTodayKey() {
 }
 
 /**
+ * Get yesterday's date key in YYYY-MM-DD format (local time)
+ */
+export function getYesterdayKey() {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+}
+
+/**
  * Extract domain from URL (removes www. prefix)
  */
 export function extractDomain(url) {
@@ -356,6 +365,29 @@ export async function endCategorySession(categoryKey) {
     return null;
 }
 
+/**
+ * End session for a category on a specific date key
+ * Used during daily reset to close sessions from the previous day
+ */
+export async function endCategorySessionForDate(categoryKey, dateKey) {
+    const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
+    const usage = data[STORAGE_KEYS.USAGE] || {};
+
+    if (usage[dateKey]?.[categoryKey]?.sessions) {
+        const sessions = usage[dateKey][categoryKey].sessions;
+        const lastSession = sessions[sessions.length - 1];
+
+        if (lastSession && !lastSession.end) {
+            lastSession.end = Date.now();
+            lastSession.duration = Math.floor((lastSession.end - lastSession.start) / 1000);
+            await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
+            return lastSession;
+        }
+    }
+
+    return null;
+}
+
 // =====================
 // Active State Management
 // =====================
@@ -403,12 +435,25 @@ export async function clearActiveStates() {
 // =====================
 
 /**
- * Perform daily reset - clear today's usage and active states
+ * Perform daily reset - end all active sessions and clear active states
  */
 export async function performDailyReset() {
+    // Get all active states before clearing them
+    const activeState = await getActiveState();
+    const yesterdayKey = getYesterdayKey();
+    
+    // End all active sessions from the previous day
+    for (const [categoryKey, state] of Object.entries(activeState)) {
+        if (state.inSession) {
+            // End the session using yesterday's date key
+            await endCategorySessionForDate(categoryKey, yesterdayKey);
+        }
+    }
+    
+    // Now clear all active states
     await clearActiveStates();
     // Usage is keyed by date, so old data naturally stays separate
-    console.log('Daily reset completed');
+    console.log('Daily reset completed - sessions ended and states cleared');
 }
 
 /**
