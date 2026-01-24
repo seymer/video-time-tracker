@@ -12,7 +12,8 @@ import {
     cleanupOldData,
     getCategoryActiveState,
     updateCategoryActiveState,
-    formatTime
+    formatTime,
+    matchDomain
 } from './utils/storage.js';
 
 import {
@@ -29,6 +30,10 @@ import {
 // =====================
 
 let lastDateKey = getTodayKey();
+
+// Track active tabs per category to prevent duplicate time counting
+// Map<categoryKey, { tabId, lastActivity }>
+const activeTabsPerCategory = new Map();
 
 // =====================
 // Initialization
@@ -150,7 +155,7 @@ async function broadcastForbiddenPeriodStatus() {
                     const url = new URL(tab.url);
                     const domain = url.hostname.replace(/^www\./, '');
 
-                    if (category.domains.some(d => domain.includes(d))) {
+                    if (category.domains.some(d => matchDomain(domain, d))) {
                         await chrome.tabs.sendMessage(tab.id, {
                             type: 'FORBIDDEN_PERIOD_ACTIVE',
                             category: categoryKey,
@@ -182,6 +187,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
     try {
         switch (message.type) {
+            // #region agent log - Debug log relay from content script
+            case 'DEBUG_LOG':
+                fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message.payload)}).catch(()=>{});
+                return { ok: true };
+            // #endregion
+
             case 'GET_CATEGORY_FOR_DOMAIN':
                 return await getCategoryForDomain(message.domain);
 
@@ -206,6 +217,19 @@ async function handleMessage(message, sender) {
             case 'CHECK_DATE':
                 return await checkDateChange();
 
+            // Tab coordination messages
+            case 'REGISTER_TAB':
+                return handleRegisterTab(message.categoryKey, sender);
+
+            case 'UNREGISTER_TAB':
+                return handleUnregisterTab(message.categoryKey, sender);
+
+            case 'REPORT_ACTIVITY':
+                return handleReportActivity(message.categoryKey, message.isActive, sender);
+
+            case 'IS_ACTIVE_TAB':
+                return isActiveTabForCategory(message.categoryKey, sender);
+
             default:
                 console.warn('Unknown message type:', message.type);
                 return { error: 'Unknown message type' };
@@ -218,7 +242,49 @@ async function handleMessage(message, sender) {
 
 async function handleAddTime(categoryKey, seconds, sender) {
     try {
+        const tabId = sender?.tab?.id;
+
+        // #region agent log - Hypothesis C: Check stale tab handling
+        const existingActiveTab = activeTabsPerCategory.get(categoryKey);
+        const isCurrentTabActive = isActiveTabForCategory(categoryKey, sender).isActive;
+        const staleness = existingActiveTab ? Date.now() - existingActiveTab.lastActivity : null;
+        fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime',message:'Tab coordination check',data:{tabId,categoryKey,seconds,isCurrentTabActive,existingActiveTabId:existingActiveTab?.tabId,stalenessMs:staleness,isStale:staleness>30000},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+
+        // Check if this tab is the active tab for this category
+        // Only count time from the active tab to prevent duplicate counting
+        if (tabId && !isCurrentTabActive) {
+            // This tab is not the active one, check if it should become active
+            const activeTab = activeTabsPerCategory.get(categoryKey);
+            if (!activeTab) {
+                // No active tab registered, make this one active
+                activeTabsPerCategory.set(categoryKey, {
+                    tabId,
+                    lastActivity: Date.now()
+                });
+            } else {
+                // #region agent log - Hypothesis C: BUG - No stale check here!
+                fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime:skipped',message:'BUG: Time skipped without stale check',data:{tabId,activeTabId:activeTab.tabId,stalenessMs:Date.now()-activeTab.lastActivity,shouldHaveCheckedStale:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
+                // Another tab is active, don't count this time
+                // But return success so the tab doesn't show errors
+                return { allowed: true, skipped: true, reason: 'not_active_tab' };
+            }
+        }
+
+        // Update last activity time for this tab
+        if (tabId) {
+            activeTabsPerCategory.set(categoryKey, {
+                tabId,
+                lastActivity: Date.now()
+            });
+        }
+
         const result = await addEffectiveTime(categoryKey, seconds);
+
+        // #region agent log - Hypothesis D: Check time tracking result
+        fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime:result',message:'Time added result',data:{categoryKey,secondsAdded:seconds,allowed:result.allowed,newTotal:result.newTotal,sessionEffectiveTime:result.sessionEffectiveTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
 
         // If limit was reached, broadcast to all tabs with this category
         if (!result.allowed) {
@@ -235,6 +301,158 @@ async function handleAddTime(categoryKey, seconds, sender) {
     }
 }
 
+// =====================
+// Tab Coordination
+// =====================
+
+/**
+ * Register a tab as tracking a category
+ * If another tab is already active for this category, this tab won't count time
+ */
+function handleRegisterTab(categoryKey, sender) {
+    const tabId = sender?.tab?.id;
+    if (!tabId) return { success: false, reason: 'no_tab_id' };
+
+    const existing = activeTabsPerCategory.get(categoryKey);
+
+    if (!existing) {
+        // No tab registered yet, this becomes the active tab
+        activeTabsPerCategory.set(categoryKey, {
+            tabId,
+            lastActivity: Date.now()
+        });
+        console.log(`[TabCoord] Tab ${tabId} registered as active for ${categoryKey}`);
+        return { success: true, isActive: true };
+    }
+
+    if (existing.tabId === tabId) {
+        // Same tab re-registering
+        existing.lastActivity = Date.now();
+        return { success: true, isActive: true };
+    }
+
+    // Another tab is active - check if it's stale (no activity for 30 seconds)
+    const staleThreshold = 30000;
+    if (Date.now() - existing.lastActivity > staleThreshold) {
+        // Take over as active tab
+        activeTabsPerCategory.set(categoryKey, {
+            tabId,
+            lastActivity: Date.now()
+        });
+        console.log(`[TabCoord] Tab ${tabId} took over as active for ${categoryKey} (previous was stale)`);
+        return { success: true, isActive: true };
+    }
+
+    // Another tab is active and not stale
+    console.log(`[TabCoord] Tab ${tabId} registered as inactive for ${categoryKey} (tab ${existing.tabId} is active)`);
+    return { success: true, isActive: false };
+}
+
+/**
+ * Unregister a tab from tracking
+ */
+function handleUnregisterTab(categoryKey, sender) {
+    const tabId = sender?.tab?.id;
+    if (!tabId) return { success: false };
+
+    const existing = activeTabsPerCategory.get(categoryKey);
+    if (existing && existing.tabId === tabId) {
+        activeTabsPerCategory.delete(categoryKey);
+        console.log(`[TabCoord] Tab ${tabId} unregistered from ${categoryKey}`);
+    }
+
+    return { success: true };
+}
+
+/**
+ * Report activity from a tab - used to determine which tab should be active
+ */
+function handleReportActivity(categoryKey, isActive, sender) {
+    const tabId = sender?.tab?.id;
+    if (!tabId) return { success: false };
+
+    const existing = activeTabsPerCategory.get(categoryKey);
+
+    if (isActive) {
+        if (!existing || existing.tabId === tabId) {
+            // This tab is active or becomes active
+            activeTabsPerCategory.set(categoryKey, {
+                tabId,
+                lastActivity: Date.now()
+            });
+            return { success: true, isActive: true };
+        }
+
+        // Another tab is active, check if stale
+        const staleThreshold = 10000; // 10 seconds for activity reports
+        if (Date.now() - existing.lastActivity > staleThreshold) {
+            activeTabsPerCategory.set(categoryKey, {
+                tabId,
+                lastActivity: Date.now()
+            });
+            return { success: true, isActive: true };
+        }
+
+        return { success: true, isActive: false };
+    }
+
+    return { success: true, isActive: existing?.tabId === tabId };
+}
+
+/**
+ * Check if a tab is the active tab for a category
+ */
+function isActiveTabForCategory(categoryKey, sender) {
+    const tabId = sender?.tab?.id;
+    if (!tabId) return { isActive: false };
+
+    const existing = activeTabsPerCategory.get(categoryKey);
+    return { isActive: existing?.tabId === tabId };
+}
+
+/**
+ * Clean up when a tab is closed
+ */
+function handleTabClosed(tabId) {
+    for (const [categoryKey, data] of activeTabsPerCategory.entries()) {
+        if (data.tabId === tabId) {
+            activeTabsPerCategory.delete(categoryKey);
+            console.log(`[TabCoord] Cleaned up tab ${tabId} from ${categoryKey}`);
+        }
+    }
+}
+
+// Listen for tab close events
+chrome.tabs.onRemoved.addListener((tabId) => {
+    handleTabClosed(tabId);
+});
+
+// Listen for tab activation to potentially switch active tracking tab
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+        const tab = await chrome.tabs.get(activeInfo.tabId);
+        if (!tab.url) return;
+
+        const url = new URL(tab.url);
+        const domain = url.hostname.replace(/^www\./, '');
+        const category = await getCategoryForDomain(domain);
+
+        if (category) {
+            // User switched to a tab with a tracked category
+            // Notify the tab that it should try to become active
+            try {
+                await chrome.tabs.sendMessage(activeInfo.tabId, {
+                    type: 'TAB_ACTIVATED'
+                });
+            } catch (e) {
+                // Tab might not have content script
+            }
+        }
+    } catch (e) {
+        // Tab might be closed or invalid
+    }
+});
+
 async function broadcastLimitReached(categoryKey, result) {
     const categories = await getCategories();
     const category = categories[categoryKey];
@@ -250,7 +468,7 @@ async function broadcastLimitReached(categoryKey, result) {
             const url = new URL(tab.url);
             const domain = url.hostname.replace(/^www\./, '');
 
-            if (category.domains.some(d => domain.includes(d))) {
+            if (category.domains.some(d => matchDomain(domain, d))) {
                 await chrome.tabs.sendMessage(tab.id, {
                     type: 'LIMIT_REACHED',
                     category: categoryKey,

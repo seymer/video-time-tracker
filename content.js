@@ -12,31 +12,86 @@ let currentCategoryKey = null;
 let detector = null;
 let isBlocked = false;
 let overlayElement = null;
+let isActiveTab = false;  // Track if this tab is the active one for the category
+let countdownInterval = null;
+let contextInvalidated = false;  // Track if extension context is invalidated
+
+// #region agent log helper - Send logs through background script (CSP bypass)
+function debugLog(location, message, data, hypothesisId) {
+    if (contextInvalidated) return;
+    try {
+        chrome.runtime.sendMessage({
+            type: 'DEBUG_LOG',
+            payload: { location, message, data, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId }
+        }).catch(() => {});
+    } catch (e) {}
+}
+// #endregion
+
+/**
+ * Handle extension context invalidation (happens when extension is reloaded)
+ */
+function handleContextInvalidated() {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    console.log('[TimeTracker] Extension context invalidated, stopping tracking');
+    
+    // Stop all tracking
+    stopTracking();
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    
+    // Remove message listener
+    try {
+        chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
+    } catch (e) {}
+}
 
 // =====================
 // Initialization
 // =====================
 
 async function initialize() {
+    // Reset context invalidation flag on fresh initialize
+    contextInvalidated = false;
+    
+    // #region agent log - Content script initialization
+    debugLog('content.js:initialize', 'Content script initializing', { url: window.location.href }, 'E');
+    // #endregion
+
+    // Clean up any previous state
+    cleanup();
+
     const domain = extractDomain(window.location.href);
     if (!domain) return;
 
     // Get category for this domain
     const category = await sendMessage({ type: 'GET_CATEGORY_FOR_DOMAIN', domain });
 
+    // #region agent log - Category lookup result
+    debugLog('content.js:initialize:category', 'Category lookup', { domain, categoryFound: !!category, categoryKey: category?.key }, 'E');
+    // #endregion
+
     if (!category) {
-        console.log('No tracking category for this domain:', domain);
+        console.log('[TimeTracker] No tracking category for this domain:', domain);
         return;
     }
 
     currentCategory = category;
     currentCategoryKey = category.key;
 
+    // Register this tab with the background
+    const registration = await sendMessage({ type: 'REGISTER_TAB', categoryKey: currentCategoryKey });
+    isActiveTab = registration?.isActive ?? true;
+    console.log(`[TimeTracker] Tab registered for ${currentCategoryKey}, isActive: ${isActiveTab}`);
+
     // Check if we can access this category
     const access = await sendMessage({ type: 'CAN_ACCESS', categoryKey: currentCategoryKey });
 
     if (!access) {
-        console.log('Failed to check access for category:', currentCategoryKey);
+        console.log('[TimeTracker] Failed to check access for category:', currentCategoryKey);
         return;
     }
 
@@ -51,8 +106,23 @@ async function initialize() {
     // Listen for messages from background
     chrome.runtime.onMessage.addListener(handleBackgroundMessage);
 
-    // Handle SPA navigation
+    // Handle SPA navigation using more efficient method
     setupNavigationObserver();
+}
+
+/**
+ * Clean up resources when re-initializing or leaving
+ */
+function cleanup() {
+    stopTracking();
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
+    // Unregister from previous category if any
+    if (currentCategoryKey) {
+        sendMessage({ type: 'UNREGISTER_TAB', categoryKey: currentCategoryKey });
+    }
 }
 
 // =====================
@@ -60,6 +130,10 @@ async function initialize() {
 // =====================
 
 async function startTracking() {
+    // #region agent log - Start tracking
+    debugLog('content.js:startTracking', 'Starting tracking', { categoryKey: currentCategoryKey, categoryType: currentCategory?.type }, 'E');
+    // #endregion
+
     // Start session in background
     const sessionResult = await sendMessage({ type: 'START_SESSION', categoryKey: currentCategoryKey });
     console.log('[TimeTracker] Session started:', sessionResult);
@@ -81,7 +155,23 @@ function stopTracking() {
 }
 
 async function handleTimeUpdate(seconds) {
+    // #region agent log - Time update from detector
+    debugLog('content.js:handleTimeUpdate', 'Detector reported time', { seconds, categoryKey: currentCategoryKey, isBlocked }, 'E');
+    // #endregion
+
     if (isBlocked) return;
+
+    // Report activity to potentially become the active tab
+    const activityResult = await sendMessage({
+        type: 'REPORT_ACTIVITY',
+        categoryKey: currentCategoryKey,
+        isActive: true
+    });
+
+    // Update our active status
+    if (activityResult) {
+        isActiveTab = activityResult.isActive;
+    }
 
     const result = await sendMessage({
         type: 'ADD_TIME',
@@ -90,7 +180,7 @@ async function handleTimeUpdate(seconds) {
     });
 
     // Check for null result (message failed) or blocked
-    if (result && !result.allowed) {
+    if (result && !result.allowed && !result.skipped) {
         handleLimitReached(result);
     }
 }
@@ -195,6 +285,10 @@ function hideBlockedOverlay() {
         overlayElement.remove();
         overlayElement = null;
     }
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+    }
     isBlocked = false;
 }
 
@@ -215,11 +309,17 @@ function startCountdownTimer(seconds) {
 
     let remaining = seconds;
 
-    const interval = setInterval(() => {
+    // Clear any existing interval
+    if (countdownInterval) {
+        clearInterval(countdownInterval);
+    }
+
+    countdownInterval = setInterval(() => {
         remaining--;
 
         if (remaining <= 0) {
-            clearInterval(interval);
+            clearInterval(countdownInterval);
+            countdownInterval = null;
             hideBlockedOverlay();
             // Re-initialize to check if we can now access
             initialize();
@@ -259,40 +359,98 @@ function handleBackgroundMessage(message) {
             hideBlockedOverlay();
             initialize();
             break;
+
+        case 'TAB_ACTIVATED':
+            // User switched to this tab - try to become the active tab
+            handleTabActivated();
+            break;
+    }
+}
+
+async function handleTabActivated() {
+    if (!currentCategoryKey || isBlocked) return;
+
+    // Report activity to try to become active
+    const result = await sendMessage({
+        type: 'REPORT_ACTIVITY',
+        categoryKey: currentCategoryKey,
+        isActive: true
+    });
+
+    if (result) {
+        isActiveTab = result.isActive;
+        console.log(`[TimeTracker] Tab activated, isActive: ${isActiveTab}`);
     }
 }
 
 async function sendMessage(message) {
+    if (contextInvalidated) return null;
+    
     try {
         return await chrome.runtime.sendMessage(message);
     } catch (e) {
-        console.error('Failed to send message:', e);
+        // Check if extension context was invalidated (extension reloaded)
+        if (e.message?.includes('Extension context invalidated') || 
+            e.message?.includes('Receiving end does not exist')) {
+            handleContextInvalidated();
+        } else {
+            console.error('[TimeTracker] Failed to send message:', e);
+        }
         return null;
     }
 }
 
 // =====================
-// Navigation Handling
+// Navigation Handling (Optimized)
 // =====================
 
 function setupNavigationObserver() {
-    // Handle YouTube-style SPA navigation
     let lastUrl = window.location.href;
 
-    const observer = new MutationObserver(() => {
+    // Method 1: Intercept history API (more efficient than MutationObserver)
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(...args) {
+        originalPushState.apply(this, args);
+        handleUrlChange();
+    };
+
+    history.replaceState = function(...args) {
+        originalReplaceState.apply(this, args);
+        handleUrlChange();
+    };
+
+    // Method 2: Listen for popstate (back/forward navigation)
+    window.addEventListener('popstate', handleUrlChange);
+
+    // Method 3: Fallback - periodic check (less frequent than MutationObserver)
+    // This catches any edge cases the above methods might miss
+    const checkInterval = setInterval(() => {
         if (window.location.href !== lastUrl) {
-            lastUrl = window.location.href;
-            handleNavigation();
+            handleUrlChange();
         }
-    });
+    }, 2000);
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    function handleUrlChange() {
+        const newUrl = window.location.href;
+        if (newUrl === lastUrl) return;
+        
+        lastUrl = newUrl;
+        console.log('[TimeTracker] URL changed:', newUrl);
+        
+        // Debounce rapid URL changes
+        clearTimeout(handleUrlChange.timeout);
+        handleUrlChange.timeout = setTimeout(() => {
+            handleNavigation();
+        }, 100);
+    }
 
-    // Also listen for popstate
-    window.addEventListener('popstate', handleNavigation);
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        clearInterval(checkInterval);
+        cleanup();
+    });
 }
 
 async function handleNavigation() {
@@ -306,14 +464,28 @@ async function handleNavigation() {
     const category = await sendMessage({ type: 'GET_CATEGORY_FOR_DOMAIN', domain });
 
     if (!category) {
-        console.log('No tracking category for this domain');
+        console.log('[TimeTracker] No tracking category for this domain');
+        // Unregister from current category if we're leaving a tracked site
+        if (currentCategoryKey) {
+            await sendMessage({ type: 'UNREGISTER_TAB', categoryKey: currentCategoryKey });
+            currentCategory = null;
+            currentCategoryKey = null;
+        }
         return;
     }
 
     // Check if category changed
     if (category.key !== currentCategoryKey) {
+        // Unregister from old category
+        if (currentCategoryKey) {
+            await sendMessage({ type: 'UNREGISTER_TAB', categoryKey: currentCategoryKey });
+        }
         currentCategory = category;
         currentCategoryKey = category.key;
+        
+        // Register for new category
+        const registration = await sendMessage({ type: 'REGISTER_TAB', categoryKey: currentCategoryKey });
+        isActiveTab = registration?.isActive ?? true;
     }
 
     // Check access
@@ -352,7 +524,7 @@ function formatSeconds(seconds) {
 }
 
 // =====================
-// Detector Classes (Inline for content script)
+// Detector Classes
 // =====================
 
 class VideoDetector {
@@ -369,6 +541,10 @@ class VideoDetector {
     }
 
     start() {
+        // #region agent log - VideoDetector start
+        debugLog('content.js:VideoDetector.start', 'VideoDetector starting', {}, 'F');
+        // #endregion
+        
         this.findVideo();
         this.setupObserver();
         this.attachVideoListeners();
@@ -378,22 +554,26 @@ class VideoDetector {
 
     stop() {
         this.detachVideoListeners();
-        if (this.observer) this.observer.disconnect();
-        if (this.reportInterval) clearInterval(this.reportInterval);
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+        if (this.reportInterval) {
+            clearInterval(this.reportInterval);
+            this.reportInterval = null;
+        }
         this.reportAccumulatedTime();
     }
 
     findVideo() {
         // Try standard video first
         this.video = document.querySelector('video');
-        console.log('[TimeTracker] Looking for video, found:', !!this.video);
 
         // YouTube specific selectors
         if (!this.video) {
             const ytPlayer = document.querySelector('ytd-player, #movie_player, #player');
             if (ytPlayer) {
                 this.video = ytPlayer.querySelector('video');
-                console.log('[TimeTracker] Found YouTube video:', !!this.video);
             }
         }
 
@@ -402,36 +582,47 @@ class VideoDetector {
             const netflixPlayer = document.querySelector('.watch-video video');
             if (netflixPlayer) {
                 this.video = netflixPlayer;
-                console.log('[TimeTracker] Found Netflix video');
             }
         }
+
+        // #region agent log - Video search result
+        debugLog('content.js:VideoDetector.findVideo', 'Video search result', { found: !!this.video, currentTime: this.video?.currentTime, paused: this.video?.paused }, 'F');
+        // #endregion
 
         if (this.video) {
             this.lastCurrentTime = this.video.currentTime;
             this.lastUpdateTimestamp = Date.now();
             console.log('[TimeTracker] Video found, currentTime:', this.lastCurrentTime);
             this.attachVideoListeners();
-        } else {
-            console.log('[TimeTracker] No video element found on page');
         }
     }
 
     setupObserver() {
-        this.observer = new MutationObserver(() => {
+        // Only observe for video element changes, not all DOM mutations
+        this.observer = new MutationObserver((mutations) => {
+            // Check if we need to find a new video
             if (!this.video || !document.contains(this.video)) {
                 this.detachVideoListeners();
                 this.findVideo();
             }
         });
-        this.observer.observe(document.body, { childList: true, subtree: true });
+        
+        // Use a more targeted observation - just watch for added/removed nodes
+        this.observer.observe(document.body, { 
+            childList: true, 
+            subtree: true,
+            attributes: false,
+            characterData: false
+        });
     }
 
     attachVideoListeners() {
         if (!this.video) return;
-        console.log('[TimeTracker] Attaching video event listeners');
+
+        // Remove any existing listeners first
+        this.detachVideoListeners();
 
         // Use timeupdate event - fires ~4 times per second during playback
-        // Crucially, this works even when tab is in background!
         this.boundHandlers.timeupdate = (e) => this.handleTimeUpdate(e);
         this.boundHandlers.play = () => this.handlePlay();
         this.boundHandlers.pause = () => this.handlePause();
@@ -476,10 +667,6 @@ class VideoDetector {
             // Add the actual video time that elapsed (more accurate than fixed increment)
             const timeToAdd = Math.min(videoTimeDelta, realTimeDelta + 0.5);
             this.accumulatedTime += timeToAdd;
-            // Log every ~5 seconds of accumulated time
-            if (this.accumulatedTime >= 5 && this.accumulatedTime < 5.5) {
-                console.log('[TimeTracker] Accumulated 5+ seconds of video time');
-            }
         }
 
         this.lastCurrentTime = currentTime;
@@ -492,7 +679,6 @@ class VideoDetector {
     }
 
     handlePlay() {
-        console.log('[TimeTracker] Video play event');
         if (this.video) {
             this.lastCurrentTime = this.video.currentTime;
             this.lastUpdateTimestamp = Date.now();
@@ -500,14 +686,16 @@ class VideoDetector {
     }
 
     handlePause() {
-        console.log('[TimeTracker] Video pause event');
         // Report any accumulated time when paused
         this.reportAccumulatedTime();
     }
 
     reportAccumulatedTime() {
+        // #region agent log - Report accumulated time
+        debugLog('content.js:VideoDetector.reportAccumulatedTime', 'Reporting time', { accumulatedTime: this.accumulatedTime, hasVideo: !!this.video, videoPaused: this.video?.paused }, 'F');
+        // #endregion
+        
         if (this.accumulatedTime > 0) {
-            console.log('[TimeTracker] Reporting accumulated time:', this.accumulatedTime.toFixed(1), 'seconds');
             this.onTimeUpdate(this.accumulatedTime);
             this.accumulatedTime = 0;
             this.lastReportTime = Date.now();
@@ -524,6 +712,7 @@ class ReadingDetector {
         this.pollInterval = null;
         this.accumulatedTime = 0;
         this.lastReportTime = Date.now();
+        this.boundHandlers = {};
     }
 
     start() {
@@ -533,25 +722,28 @@ class ReadingDetector {
 
     stop() {
         this.removeEventListeners();
-        if (this.pollInterval) clearInterval(this.pollInterval);
+        if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+        }
         this.reportAccumulatedTime();
     }
 
     setupEventListeners() {
-        this.handleInteraction = () => { this.lastInteraction = Date.now(); };
-        this.handleVisibility = () => { this.isVisible = !document.hidden; };
+        this.boundHandlers.interaction = () => { this.lastInteraction = Date.now(); };
+        this.boundHandlers.visibility = () => { this.isVisible = !document.hidden; };
 
         ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(e => {
-            document.addEventListener(e, this.handleInteraction, { passive: true });
+            document.addEventListener(e, this.boundHandlers.interaction, { passive: true });
         });
-        document.addEventListener('visibilitychange', this.handleVisibility);
+        document.addEventListener('visibilitychange', this.boundHandlers.visibility);
     }
 
     removeEventListeners() {
         ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'].forEach(e => {
-            document.removeEventListener(e, this.handleInteraction);
+            document.removeEventListener(e, this.boundHandlers.interaction);
         });
-        document.removeEventListener('visibilitychange', this.handleVisibility);
+        document.removeEventListener('visibilitychange', this.boundHandlers.visibility);
     }
 
     startPolling() {
@@ -564,7 +756,9 @@ class ReadingDetector {
 
         if (isActive) {
             this.accumulatedTime += 1;
-            if (now - this.lastReportTime >= 5000) this.reportAccumulatedTime();
+            if (now - this.lastReportTime >= 5000) {
+                this.reportAccumulatedTime();
+            }
         }
     }
 
@@ -578,7 +772,10 @@ class ReadingDetector {
 }
 
 class SocialDetector extends ReadingDetector {
-    // Same as ReadingDetector for now
+    // Same as ReadingDetector for now, but can be customized later
+    constructor(onTimeUpdate, idleTimeout = 30) {
+        super(onTimeUpdate, idleTimeout);
+    }
 }
 
 function createDetector(type, onTimeUpdate, options = {}) {

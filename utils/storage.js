@@ -60,6 +60,88 @@ const DEFAULT_SETTINGS = {
 };
 
 // =====================
+// Storage Cache & Batch Write
+// =====================
+
+// In-memory cache for frequently accessed data
+const storageCache = {
+    usage: null,
+    activeState: null,
+    categories: null,
+    lastUsageWrite: 0,
+    pendingTimeUpdates: new Map(), // categoryKey -> seconds to add
+    writeInterval: null
+};
+
+// Batch write interval (write to storage every 10 seconds if there are pending changes)
+const BATCH_WRITE_INTERVAL = 10000;
+
+/**
+ * Initialize the batch write system
+ */
+function initBatchWriteSystem() {
+    if (storageCache.writeInterval) return;
+    
+    // #region agent log - Hypothesis B: Check if batch write system initializes
+    fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:initBatchWriteSystem',message:'Batch write system initializing',data:{interval:BATCH_WRITE_INTERVAL},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    storageCache.writeInterval = setInterval(async () => {
+        await flushPendingTimeUpdates();
+    }, BATCH_WRITE_INTERVAL);
+}
+
+/**
+ * Flush all pending time updates to storage
+ */
+async function flushPendingTimeUpdates() {
+    // #region agent log - Hypothesis B: Check if flush is being called
+    fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:flushPendingTimeUpdates',message:'Flush called',data:{pendingCount:storageCache.pendingTimeUpdates.size,pendingEntries:Array.from(storageCache.pendingTimeUpdates.entries())},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    if (storageCache.pendingTimeUpdates.size === 0) return;
+    
+    const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
+    const usage = data[STORAGE_KEYS.USAGE] || {};
+    const todayKey = getTodayKey();
+    
+    if (!usage[todayKey]) usage[todayKey] = {};
+    
+    let hasChanges = false;
+    for (const [categoryKey, seconds] of storageCache.pendingTimeUpdates.entries()) {
+        if (!usage[todayKey][categoryKey]) {
+            usage[todayKey][categoryKey] = { totalTime: 0, sessions: [] };
+        }
+        usage[todayKey][categoryKey].totalTime += seconds;
+        hasChanges = true;
+    }
+    
+    if (hasChanges) {
+        await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
+        storageCache.usage = usage;
+        storageCache.lastUsageWrite = Date.now();
+        console.log(`[StorageCache] Flushed ${storageCache.pendingTimeUpdates.size} pending time updates`);
+    }
+    
+    storageCache.pendingTimeUpdates.clear();
+}
+
+/**
+ * Get cached usage data (reads from storage if cache is stale)
+ */
+async function getCachedUsage() {
+    // Cache for 5 seconds
+    if (!storageCache.usage || Date.now() - storageCache.lastUsageWrite > 5000) {
+        const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
+        storageCache.usage = data[STORAGE_KEYS.USAGE] || {};
+    }
+    return storageCache.usage;
+}
+
+// Initialize batch write system when module loads
+initBatchWriteSystem();
+
+// =====================
 // Utility Functions
 // =====================
 
@@ -91,6 +173,40 @@ export function extractDomain(url) {
     } catch {
         return null;
     }
+}
+
+/**
+ * Match a hostname against a configured domain pattern
+ * Uses strict matching to prevent false positives
+ * 
+ * @param {string} hostname - The hostname to check (e.g., "video.youtube.com")
+ * @param {string} pattern - The domain pattern (e.g., "youtube.com")
+ * @returns {boolean} - True if hostname matches the pattern
+ * 
+ * Examples:
+ *   matchDomain("youtube.com", "youtube.com") => true
+ *   matchDomain("www.youtube.com", "youtube.com") => true (www already stripped)
+ *   matchDomain("video.youtube.com", "youtube.com") => true (subdomain)
+ *   matchDomain("notyoutube.com", "youtube.com") => false
+ *   matchDomain("youtube.com.evil.com", "youtube.com") => false
+ */
+export function matchDomain(hostname, pattern) {
+    // Normalize both to lowercase
+    hostname = hostname.toLowerCase();
+    pattern = pattern.toLowerCase();
+    
+    // Exact match
+    if (hostname === pattern) {
+        return true;
+    }
+    
+    // Check if hostname is a subdomain of pattern
+    // hostname must end with ".pattern"
+    if (hostname.endsWith('.' + pattern)) {
+        return true;
+    }
+    
+    return false;
 }
 
 /**
@@ -245,12 +361,13 @@ export async function updateCategory(categoryKey, config) {
 
 /**
  * Find category for a domain
+ * Uses strict domain matching to prevent false positives
  */
 export async function getCategoryForDomain(domain) {
     const categories = await getCategories();
 
     for (const [key, category] of Object.entries(categories)) {
-        if (category.domains.some(d => domain.includes(d) || d.includes(domain))) {
+        if (category.domains.some(d => matchDomain(domain, d))) {
             return { key, ...category };
         }
     }
@@ -292,16 +409,74 @@ export async function getTodayUsage() {
 
 /**
  * Get usage for a specific category today
+ * IMPORTANT: Includes pending (unflushed) time for accurate limit checking
  */
 export async function getCategoryUsage(categoryKey) {
     const todayUsage = await getTodayUsage();
-    return todayUsage[categoryKey] || { totalTime: 0, sessions: [] };
+    const baseUsage = todayUsage[categoryKey] || { totalTime: 0, sessions: [] };
+    
+    // Include pending time in the returned total for accurate limit checking
+    const pendingTime = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
+    const totalWithPending = baseUsage.totalTime + pendingTime;
+    
+    // #region agent log - Hypothesis A: Verify fix - pending time now included
+    fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:getCategoryUsage',message:'FIX: Pending time now included',data:{categoryKey,storedTime:baseUsage.totalTime,pendingTime,totalWithPending},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
+    // #endregion
+    
+    return {
+        totalTime: totalWithPending,
+        sessions: baseUsage.sessions
+    };
 }
 
 /**
- * Add time to a category
+ * Add time to a category (uses batched writes for efficiency)
+ * Time is accumulated in memory and periodically flushed to storage
  */
 export async function addCategoryTime(categoryKey, seconds) {
+    const todayKey = getTodayKey();
+    
+    // Add to pending updates (will be flushed periodically)
+    const currentPending = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
+    storageCache.pendingTimeUpdates.set(categoryKey, currentPending + seconds);
+    
+    // Get current usage from cache or storage
+    const usage = await getCachedUsage();
+    
+    if (!usage[todayKey]) usage[todayKey] = {};
+    if (!usage[todayKey][categoryKey]) {
+        usage[todayKey][categoryKey] = { totalTime: 0, sessions: [] };
+    }
+    
+    // Include pending time in the returned total for accurate limit checking
+    const pendingTime = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
+    const totalWithPending = usage[todayKey][categoryKey].totalTime + pendingTime;
+    
+    // #region agent log - Hypothesis D: Check addCategoryTime calculation
+    fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'storage.js:addCategoryTime',message:'Time calculation',data:{categoryKey,secondsAdding:seconds,storedTime:usage[todayKey][categoryKey].totalTime,pendingTime,totalWithPending},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+    
+    // If we're close to a limit, flush immediately to ensure accuracy
+    // This prevents users from exceeding limits due to batching delays
+    const categories = await getCategories();
+    const category = categories[categoryKey];
+    if (category?.dailyLimit && totalWithPending >= category.dailyLimit * 0.95) {
+        await flushPendingTimeUpdates();
+    }
+    
+    return {
+        totalTime: totalWithPending,
+        sessions: usage[todayKey][categoryKey].sessions
+    };
+}
+
+/**
+ * Add time immediately without batching (used for critical updates)
+ */
+export async function addCategoryTimeImmediate(categoryKey, seconds) {
+    // Flush any pending updates first
+    await flushPendingTimeUpdates();
+    
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
     const todayKey = getTodayKey();
@@ -314,6 +489,8 @@ export async function addCategoryTime(categoryKey, seconds) {
     usage[todayKey][categoryKey].totalTime += seconds;
 
     await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
+    storageCache.usage = usage;
+    
     return usage[todayKey][categoryKey];
 }
 
@@ -436,24 +613,65 @@ export async function clearActiveStates() {
 
 /**
  * Perform daily reset - end all active sessions and clear active states
+ * This handles the midnight transition properly:
+ * 1. End sessions from the previous day with proper accounting
+ * 2. Clear rest periods but preserve session state for continuation if needed
  */
 export async function performDailyReset() {
-    // Get all active states before clearing them
+    // First, flush any pending time updates to ensure data integrity
+    await flushPendingTimeUpdates();
+    
+    const now = Date.now();
     const activeState = await getActiveState();
     const yesterdayKey = getYesterdayKey();
+    const todayKey = getTodayKey();
     
-    // End all active sessions from the previous day
+    console.log(`[DailyReset] Starting reset. Yesterday: ${yesterdayKey}, Today: ${todayKey}`);
+    
+    // Process each category's active state
     for (const [categoryKey, state] of Object.entries(activeState)) {
-        if (state.inSession) {
+        if (state.inSession && state.sessionStart) {
+            // Calculate how much of the session was in yesterday
+            const midnightToday = new Date();
+            midnightToday.setHours(0, 0, 0, 0);
+            const midnightTimestamp = midnightToday.getTime();
+            
             // End the session using yesterday's date key
             await endCategorySessionForDate(categoryKey, yesterdayKey);
+            
+            console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday`);
+        }
+        
+        // Clear rest periods - they don't carry over to the new day
+        if (state.inRest) {
+            console.log(`[DailyReset] Clearing rest period for ${categoryKey}`);
         }
     }
     
-    // Now clear all active states
+    // Clear all active states for the new day
+    // Users will start fresh sessions when they visit sites
     await clearActiveStates();
-    // Usage is keyed by date, so old data naturally stays separate
-    console.log('Daily reset completed - sessions ended and states cleared');
+    
+    // Clear the usage cache to force fresh read
+    storageCache.usage = null;
+    
+    console.log('[DailyReset] Daily reset completed - all sessions ended and states cleared');
+}
+
+/**
+ * Check and handle date change (useful for tabs that span midnight)
+ * Returns true if date changed
+ */
+export async function checkAndHandleDateChange(lastKnownDateKey) {
+    const currentDateKey = getTodayKey();
+    
+    if (currentDateKey !== lastKnownDateKey) {
+        console.log(`[DateChange] Date changed from ${lastKnownDateKey} to ${currentDateKey}`);
+        await performDailyReset();
+        return { changed: true, newDateKey: currentDateKey };
+    }
+    
+    return { changed: false, newDateKey: currentDateKey };
 }
 
 /**
