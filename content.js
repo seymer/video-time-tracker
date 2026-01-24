@@ -9,24 +9,13 @@
 
 let currentCategory = null;
 let currentCategoryKey = null;
+let currentDomain = null;  // Current domain being tracked
 let detector = null;
 let isBlocked = false;
 let overlayElement = null;
 let isActiveTab = false;  // Track if this tab is the active one for the category
 let countdownInterval = null;
 let contextInvalidated = false;  // Track if extension context is invalidated
-
-// #region agent log helper - Send logs through background script (CSP bypass)
-function debugLog(location, message, data, hypothesisId) {
-    if (contextInvalidated) return;
-    try {
-        chrome.runtime.sendMessage({
-            type: 'DEBUG_LOG',
-            payload: { location, message, data, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId }
-        }).catch(() => {});
-    } catch (e) {}
-}
-// #endregion
 
 /**
  * Handle extension context invalidation (happens when extension is reloaded)
@@ -57,10 +46,6 @@ async function initialize() {
     // Reset context invalidation flag on fresh initialize
     contextInvalidated = false;
     
-    // #region agent log - Content script initialization
-    debugLog('content.js:initialize', 'Content script initializing', { url: window.location.href }, 'E');
-    // #endregion
-
     // Clean up any previous state
     cleanup();
 
@@ -70,10 +55,6 @@ async function initialize() {
     // Get category for this domain
     const category = await sendMessage({ type: 'GET_CATEGORY_FOR_DOMAIN', domain });
 
-    // #region agent log - Category lookup result
-    debugLog('content.js:initialize:category', 'Category lookup', { domain, categoryFound: !!category, categoryKey: category?.key }, 'E');
-    // #endregion
-
     if (!category) {
         console.log('[TimeTracker] No tracking category for this domain:', domain);
         return;
@@ -81,11 +62,26 @@ async function initialize() {
 
     currentCategory = category;
     currentCategoryKey = category.key;
+    currentDomain = domain;  // Store current domain for time tracking
 
     // Register this tab with the background
     const registration = await sendMessage({ type: 'REGISTER_TAB', categoryKey: currentCategoryKey });
     isActiveTab = registration?.isActive ?? true;
     console.log(`[TimeTracker] Tab registered for ${currentCategoryKey}, isActive: ${isActiveTab}`);
+
+    // Check domain-specific limit first (takes priority)
+    const domainCheck = await sendMessage({ type: 'CHECK_DOMAIN_LIMIT', domain: currentDomain });
+    if (domainCheck && !domainCheck.allowed) {
+        showBlockedOverlay({
+            allowed: false,
+            reason: 'domain_limit',
+            reasonText: `Daily limit for ${currentDomain} reached`,
+            domain: currentDomain,
+            limit: domainCheck.limit,
+            used: domainCheck.used
+        });
+        return;
+    }
 
     // Check if we can access this category
     const access = await sendMessage({ type: 'CAN_ACCESS', categoryKey: currentCategoryKey });
@@ -130,10 +126,6 @@ function cleanup() {
 // =====================
 
 async function startTracking() {
-    // #region agent log - Start tracking
-    debugLog('content.js:startTracking', 'Starting tracking', { categoryKey: currentCategoryKey, categoryType: currentCategory?.type }, 'E');
-    // #endregion
-
     // Start session in background
     const sessionResult = await sendMessage({ type: 'START_SESSION', categoryKey: currentCategoryKey });
     console.log('[TimeTracker] Session started:', sessionResult);
@@ -155,10 +147,6 @@ function stopTracking() {
 }
 
 async function handleTimeUpdate(seconds) {
-    // #region agent log - Time update from detector
-    debugLog('content.js:handleTimeUpdate', 'Detector reported time', { seconds, categoryKey: currentCategoryKey, isBlocked }, 'E');
-    // #endregion
-
     if (isBlocked) return;
 
     // Report activity to potentially become the active tab
@@ -176,6 +164,7 @@ async function handleTimeUpdate(seconds) {
     const result = await sendMessage({
         type: 'ADD_TIME',
         categoryKey: currentCategoryKey,
+        domain: currentDomain,  // Include domain for per-site tracking
         seconds
     });
 
@@ -470,9 +459,13 @@ async function handleNavigation() {
             await sendMessage({ type: 'UNREGISTER_TAB', categoryKey: currentCategoryKey });
             currentCategory = null;
             currentCategoryKey = null;
+            currentDomain = null;
         }
         return;
     }
+
+    // Update current domain
+    currentDomain = domain;
 
     // Check if category changed
     if (category.key !== currentCategoryKey) {
@@ -541,10 +534,6 @@ class VideoDetector {
     }
 
     start() {
-        // #region agent log - VideoDetector start
-        debugLog('content.js:VideoDetector.start', 'VideoDetector starting', {}, 'F');
-        // #endregion
-        
         this.findVideo();
         this.setupObserver();
         this.attachVideoListeners();
@@ -584,10 +573,6 @@ class VideoDetector {
                 this.video = netflixPlayer;
             }
         }
-
-        // #region agent log - Video search result
-        debugLog('content.js:VideoDetector.findVideo', 'Video search result', { found: !!this.video, currentTime: this.video?.currentTime, paused: this.video?.paused }, 'F');
-        // #endregion
 
         if (this.video) {
             this.lastCurrentTime = this.video.currentTime;
@@ -691,10 +676,6 @@ class VideoDetector {
     }
 
     reportAccumulatedTime() {
-        // #region agent log - Report accumulated time
-        debugLog('content.js:VideoDetector.reportAccumulatedTime', 'Reporting time', { accumulatedTime: this.accumulatedTime, hasVideo: !!this.video, videoPaused: this.video?.paused }, 'F');
-        // #endregion
-        
         if (this.accumulatedTime > 0) {
             this.onTimeUpdate(this.accumulatedTime);
             this.accumulatedTime = 0;

@@ -13,7 +13,14 @@ import {
     getCategoryActiveState,
     updateCategoryActiveState,
     formatTime,
-    matchDomain
+    matchDomain,
+    addDomainTime,
+    checkDomainLimit,
+    getDomainLimits,
+    setDomainLimit,
+    getTodayStats,
+    getWeekStats,
+    getMonthStats
 } from './utils/storage.js';
 
 import {
@@ -187,12 +194,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleMessage(message, sender) {
     try {
         switch (message.type) {
-            // #region agent log - Debug log relay from content script
-            case 'DEBUG_LOG':
-                fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(message.payload)}).catch(()=>{});
-                return { ok: true };
-            // #endregion
-
             case 'GET_CATEGORY_FOR_DOMAIN':
                 return await getCategoryForDomain(message.domain);
 
@@ -206,7 +207,7 @@ async function handleMessage(message, sender) {
                 return await endSession(message.categoryKey, message.triggerRest);
 
             case 'ADD_TIME':
-                return await handleAddTime(message.categoryKey, message.seconds, sender);
+                return await handleAddTime(message.categoryKey, message.domain, message.seconds, sender);
 
             case 'GET_STATUS':
                 return await getCategoryStatus(message.categoryKey);
@@ -230,6 +231,26 @@ async function handleMessage(message, sender) {
             case 'IS_ACTIVE_TAB':
                 return isActiveTabForCategory(message.categoryKey, sender);
 
+            // Statistics messages
+            case 'GET_TODAY_STATS':
+                return await getTodayStats();
+
+            case 'GET_WEEK_STATS':
+                return await getWeekStats();
+
+            case 'GET_MONTH_STATS':
+                return await getMonthStats();
+
+            // Domain limit messages
+            case 'GET_DOMAIN_LIMITS':
+                return await getDomainLimits();
+
+            case 'SET_DOMAIN_LIMIT':
+                return await setDomainLimit(message.domain, message.dailyLimit);
+
+            case 'CHECK_DOMAIN_LIMIT':
+                return await checkDomainLimit(message.domain);
+
             default:
                 console.warn('Unknown message type:', message.type);
                 return { error: 'Unknown message type' };
@@ -240,19 +261,14 @@ async function handleMessage(message, sender) {
     }
 }
 
-async function handleAddTime(categoryKey, seconds, sender) {
+async function handleAddTime(categoryKey, domain, seconds, sender) {
     try {
         const tabId = sender?.tab?.id;
 
-        // #region agent log - Hypothesis C: Check stale tab handling
-        const existingActiveTab = activeTabsPerCategory.get(categoryKey);
-        const isCurrentTabActive = isActiveTabForCategory(categoryKey, sender).isActive;
-        const staleness = existingActiveTab ? Date.now() - existingActiveTab.lastActivity : null;
-        fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime',message:'Tab coordination check',data:{tabId,categoryKey,seconds,isCurrentTabActive,existingActiveTabId:existingActiveTab?.tabId,stalenessMs:staleness,isStale:staleness>30000},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-
         // Check if this tab is the active tab for this category
         // Only count time from the active tab to prevent duplicate counting
+        const isCurrentTabActive = isActiveTabForCategory(categoryKey, sender).isActive;
+        
         if (tabId && !isCurrentTabActive) {
             // This tab is not the active one, check if it should become active
             const activeTab = activeTabsPerCategory.get(categoryKey);
@@ -263,9 +279,6 @@ async function handleAddTime(categoryKey, seconds, sender) {
                     lastActivity: Date.now()
                 });
             } else {
-                // #region agent log - Hypothesis C: BUG - No stale check here!
-                fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime:skipped',message:'BUG: Time skipped without stale check',data:{tabId,activeTabId:activeTab.tabId,stalenessMs:Date.now()-activeTab.lastActivity,shouldHaveCheckedStale:true},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
-                // #endregion
                 // Another tab is active, don't count this time
                 // But return success so the tab doesn't show errors
                 return { allowed: true, skipped: true, reason: 'not_active_tab' };
@@ -280,11 +293,25 @@ async function handleAddTime(categoryKey, seconds, sender) {
             });
         }
 
-        const result = await addEffectiveTime(categoryKey, seconds);
+        // Check domain-specific limit first (takes priority over category limit)
+        if (domain) {
+            const domainCheck = await checkDomainLimit(domain);
+            if (domainCheck && !domainCheck.allowed) {
+                // Domain limit reached
+                return {
+                    allowed: false,
+                    reason: 'domain_limit',
+                    domain,
+                    limit: domainCheck.limit,
+                    used: domainCheck.used
+                };
+            }
+            
+            // Record domain-level time
+            await addDomainTime(categoryKey, domain, seconds);
+        }
 
-        // #region agent log - Hypothesis D: Check time tracking result
-        fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'background.js:handleAddTime:result',message:'Time added result',data:{categoryKey,secondsAdded:seconds,allowed:result.allowed,newTotal:result.newTotal,sessionEffectiveTime:result.sessionEffectiveTime},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
+        const result = await addEffectiveTime(categoryKey, seconds);
 
         // If limit was reached, broadcast to all tabs with this category
         if (!result.allowed) {

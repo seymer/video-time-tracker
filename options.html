@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Time Tracker - Settings</title>
+    <title>Time Tracker - Dashboard</title>
     <link rel="stylesheet" href="options.css">
 </head>
 
@@ -15,22 +15,110 @@
             <p class="subtitle">Manage your screen time effectively</p>
         </header>
 
-        <!-- Today's Summary -->
-        <section class="card summary-card">
-            <h2>📊 Today's Usage</h2>
-            <div id="usageSummary" class="usage-grid">
-                <!-- Populated by JS -->
-            </div>
-        </section>
+        <!-- Tab Navigation -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="stats">📊 Statistics</button>
+            <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+        </nav>
 
-        <!-- Category Settings -->
-        <section class="card">
-            <h2>📁 Categories</h2>
-            <div id="categoriesContainer">
-                <!-- Populated by JS -->
+        <!-- Statistics Tab -->
+        <div id="stats-tab" class="tab-content active">
+            <!-- Period Selector -->
+            <div class="period-selector">
+                <button class="period-btn active" data-period="day">Today</button>
+                <button class="period-btn" data-period="week">This Week</button>
+                <button class="period-btn" data-period="month">This Month</button>
             </div>
-            <button id="addCategoryBtn" class="btn btn-secondary">+ Add Category</button>
-        </section>
+
+            <!-- Summary Cards -->
+            <section class="stats-summary">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalTime">0h 0m</div>
+                    <div class="stat-label">Total Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="sitesVisited">0</div>
+                    <div class="stat-label">Sites Tracked</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="avgDaily">0h 0m</div>
+                    <div class="stat-label">Daily Average</div>
+                </div>
+            </section>
+
+            <!-- Chart Section -->
+            <section class="card chart-section">
+                <h2>📈 Usage Over Time</h2>
+                <div id="chartContainer" class="chart-container">
+                    <div id="barChart" class="bar-chart">
+                        <!-- Populated by JS -->
+                    </div>
+                    <div id="chartLabels" class="chart-labels">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Domain Breakdown -->
+            <section class="card">
+                <h2>🌐 By Website</h2>
+                <div id="domainBreakdown" class="domain-list">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+
+            <!-- Category Breakdown -->
+            <section class="card">
+                <h2>📁 By Category</h2>
+                <div id="categoryBreakdown" class="category-list">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="settings-tab" class="tab-content">
+            <!-- Today's Summary (Quick View) -->
+            <section class="card summary-card">
+                <h2>📊 Today's Usage</h2>
+                <div id="usageSummary" class="usage-grid">
+                    <!-- Populated by JS -->
+                </div>
+            </section>
+
+            <!-- Category Settings -->
+            <section class="card">
+                <h2>📁 Categories</h2>
+                <div id="categoriesContainer">
+                    <!-- Populated by JS -->
+                </div>
+                <button id="addCategoryBtn" class="btn btn-secondary">+ Add Category</button>
+            </section>
+
+            <!-- Domain Limits -->
+            <section class="card">
+                <h2>🔒 Website Limits</h2>
+                <p class="section-description">Set individual time limits for specific websites (takes priority over category limits)</p>
+                <div id="domainLimitsContainer">
+                    <!-- Populated by JS -->
+                </div>
+                <div class="add-domain-form">
+                    <input type="text" id="newDomainInput" placeholder="e.g., youtube.com">
+                    <input type="number" id="newDomainLimit" placeholder="Hours" min="0.5" step="0.5" value="1">
+                    <button id="addDomainLimitBtn" class="btn btn-secondary">+ Add Limit</button>
+                </div>
+            </section>
+
+            <!-- Data Management -->
+            <section class="card">
+                <h2>💾 Data</h2>
+                <div class="data-actions">
+                    <button id="exportBtn" class="btn btn-secondary">Export Data</button>
+                    <button id="resetTodayBtn" class="btn btn-warning">Reset Today</button>
+                    <button id="clearAllBtn" class="btn btn-danger">Clear All Data</button>
+                </div>
+            </section>
+        </div>
 
         <!-- Edit Category Modal -->
         <div id="categoryModal" class="modal hidden">
@@ -115,16 +203,6 @@
                 </form>
             </div>
         </div>
-
-        <!-- Data Management -->
-        <section class="card">
-            <h2>💾 Data</h2>
-            <div class="data-actions">
-                <button id="exportBtn" class="btn btn-secondary">Export Data</button>
-                <button id="resetTodayBtn" class="btn btn-warning">Reset Today</button>
-                <button id="clearAllBtn" class="btn btn-danger">Clear All Data</button>
-            </div>
-        </section>
 
         <footer class="footer">
             <p>Advanced Time Tracker v1.0.0</p>

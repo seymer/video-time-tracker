@@ -1,6 +1,6 @@
 /**
  * Options Page JavaScript
- * Handles category configuration, usage display, and data management
+ * Handles category configuration, usage display, statistics, and data management
  */
 
 // =====================
@@ -9,6 +9,9 @@
 
 let categories = {};
 let editingCategory = null;
+let currentPeriod = 'day';
+let currentStats = null;
+let domainLimits = {};
 
 // =====================
 // Initialization
@@ -17,22 +20,205 @@ let editingCategory = null;
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     setupEventListeners();
+    await loadStats(currentPeriod);
 });
 
 async function loadData() {
     try {
-        const data = await chrome.storage.local.get(['categories', 'usage', 'activeState']);
+        const data = await chrome.storage.local.get(['categories', 'usage', 'activeState', 'domainLimits']);
         categories = data.categories || {};
+        domainLimits = data.domainLimits || {};
 
         renderUsageSummary(data.usage || {}, data.activeState || {});
         renderCategories();
+        renderDomainLimits();
     } catch (error) {
         console.error('Error loading data:', error);
     }
 }
 
+async function loadStats(period) {
+    currentPeriod = period;
+    
+    try {
+        let stats;
+        switch (period) {
+            case 'day':
+                stats = await chrome.runtime.sendMessage({ type: 'GET_TODAY_STATS' });
+                break;
+            case 'week':
+                stats = await chrome.runtime.sendMessage({ type: 'GET_WEEK_STATS' });
+                break;
+            case 'month':
+                stats = await chrome.runtime.sendMessage({ type: 'GET_MONTH_STATS' });
+                break;
+        }
+        
+        currentStats = stats;
+        renderStats(stats, period);
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
 // =====================
-// Rendering
+// Statistics Rendering
+// =====================
+
+function renderStats(stats, period) {
+    if (!stats) return;
+    
+    // Summary cards
+    document.getElementById('totalTime').textContent = formatTime(stats.totalTime);
+    document.getElementById('sitesVisited').textContent = Object.keys(stats.byDomain || {}).length;
+    
+    // Calculate daily average
+    const daysCount = Object.keys(stats.byDate || {}).length || 1;
+    const avgDaily = stats.totalTime / daysCount;
+    document.getElementById('avgDaily').textContent = formatTime(avgDaily);
+    
+    // Render chart
+    renderChart(stats, period);
+    
+    // Render domain breakdown
+    renderDomainBreakdown(stats);
+    
+    // Render category breakdown
+    renderCategoryBreakdown(stats);
+}
+
+function renderChart(stats, period) {
+    const chartContainer = document.getElementById('barChart');
+    const labelsContainer = document.getElementById('chartLabels');
+    
+    const byDate = stats.byDate || {};
+    const dates = Object.keys(byDate).sort();
+    
+    if (dates.length === 0) {
+        chartContainer.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📊</div>
+                <p>No data for this period</p>
+            </div>
+        `;
+        labelsContainer.innerHTML = '';
+        return;
+    }
+    
+    // Find max value for scaling
+    const maxTime = Math.max(...dates.map(d => byDate[d].totalTime)) || 1;
+    
+    // Generate bars
+    chartContainer.innerHTML = dates.map(date => {
+        const dayData = byDate[date];
+        const height = Math.max(5, (dayData.totalTime / maxTime) * 100);
+        const formattedTime = formatTime(dayData.totalTime);
+        
+        return `
+            <div class="bar-wrapper">
+                <div class="bar" style="height: ${height}%">
+                    <div class="bar-tooltip">${formattedTime}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    // Generate labels
+    labelsContainer.innerHTML = dates.map(date => {
+        const d = new Date(date);
+        let label;
+        
+        if (period === 'day') {
+            label = 'Today';
+        } else if (period === 'week') {
+            label = d.toLocaleDateString('en-US', { weekday: 'short' });
+        } else {
+            label = d.getDate();
+        }
+        
+        return `<div class="chart-label">${label}</div>`;
+    }).join('');
+}
+
+function renderDomainBreakdown(stats) {
+    const container = document.getElementById('domainBreakdown');
+    const byDomain = stats.byDomain || {};
+    
+    const sortedDomains = Object.entries(byDomain)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+    
+    if (sortedDomains.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">🌐</div>
+                <p>No website data recorded yet</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const maxTime = sortedDomains[0][1] || 1;
+    
+    container.innerHTML = sortedDomains.map(([domain, time]) => {
+        const percentage = (time / maxTime) * 100;
+        const icon = domain.charAt(0).toUpperCase();
+        
+        return `
+            <div class="domain-item">
+                <div class="domain-info">
+                    <div class="domain-icon">${icon}</div>
+                    <span class="domain-name">${domain}</span>
+                </div>
+                <div class="domain-bar">
+                    <div class="domain-bar-fill" style="width: ${percentage}%"></div>
+                </div>
+                <span class="domain-time">${formatTime(time)}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderCategoryBreakdown(stats) {
+    const container = document.getElementById('categoryBreakdown');
+    const byCategory = stats.byCategory || {};
+    
+    const sortedCategories = Object.entries(byCategory)
+        .sort((a, b) => b[1] - a[1]);
+    
+    if (sortedCategories.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">📁</div>
+                <p>No category data recorded yet</p>
+            </div>
+        `;
+        return;
+    }
+    
+    const maxTime = sortedCategories[0][1] || 1;
+    
+    container.innerHTML = sortedCategories.map(([key, time]) => {
+        const category = categories[key] || { name: key };
+        const percentage = (time / maxTime) * 100;
+        
+        return `
+            <div class="domain-item">
+                <div class="domain-info">
+                    <div class="domain-icon">📁</div>
+                    <span class="domain-name">${category.name}</span>
+                </div>
+                <div class="domain-bar">
+                    <div class="domain-bar-fill" style="width: ${percentage}%"></div>
+                </div>
+                <span class="domain-time">${formatTime(time)}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// =====================
+// Settings Rendering
 // =====================
 
 function renderUsageSummary(usage, activeState) {
@@ -108,11 +294,50 @@ function renderCategories() {
     `).join('');
 }
 
+function renderDomainLimits() {
+    const container = document.getElementById('domainLimitsContainer');
+    
+    if (Object.keys(domainLimits).length === 0) {
+        container.innerHTML = '<p style="color: rgba(255,255,255,0.4); font-size: 13px;">No website-specific limits set.</p>';
+        return;
+    }
+    
+    container.innerHTML = Object.entries(domainLimits).map(([domain, config]) => `
+        <div class="domain-limit-item" data-domain="${domain}">
+            <div class="limit-info">
+                <span class="limit-domain">${domain}</span>
+                <span class="limit-value">${formatTime(config.dailyLimit)}/day</span>
+            </div>
+            <button class="remove-limit" title="Remove limit">×</button>
+        </div>
+    `).join('');
+}
+
 // =====================
 // Event Handlers
 // =====================
 
 function setupEventListeners() {
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            btn.classList.add('active');
+            document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+        });
+    });
+    
+    // Period switching
+    document.querySelectorAll('.period-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            loadStats(btn.dataset.period);
+        });
+    });
+
     // Category cards
     document.getElementById('categoriesContainer').addEventListener('click', (e) => {
         const card = e.target.closest('.category-card');
@@ -146,6 +371,76 @@ function setupEventListeners() {
     document.getElementById('exportBtn').addEventListener('click', exportData);
     document.getElementById('resetTodayBtn').addEventListener('click', resetToday);
     document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
+    
+    // Domain limits
+    document.getElementById('addDomainLimitBtn').addEventListener('click', addDomainLimit);
+    document.getElementById('domainLimitsContainer').addEventListener('click', (e) => {
+        if (e.target.classList.contains('remove-limit')) {
+            const item = e.target.closest('.domain-limit-item');
+            if (item) {
+                removeDomainLimit(item.dataset.domain);
+            }
+        }
+    });
+}
+
+// =====================
+// Domain Limits Management
+// =====================
+
+async function addDomainLimit() {
+    const domainInput = document.getElementById('newDomainInput');
+    const limitInput = document.getElementById('newDomainLimit');
+    
+    const domain = domainInput.value.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '');
+    const hours = parseFloat(limitInput.value);
+    
+    if (!domain) {
+        alert('Please enter a domain');
+        return;
+    }
+    
+    if (!hours || hours <= 0) {
+        alert('Please enter a valid limit in hours');
+        return;
+    }
+    
+    const dailyLimit = hours * 3600; // Convert to seconds
+    
+    try {
+        await chrome.runtime.sendMessage({
+            type: 'SET_DOMAIN_LIMIT',
+            domain,
+            dailyLimit
+        });
+        
+        domainLimits[domain] = { dailyLimit };
+        renderDomainLimits();
+        
+        domainInput.value = '';
+        limitInput.value = '1';
+    } catch (error) {
+        console.error('Error setting domain limit:', error);
+        alert('Failed to set domain limit');
+    }
+}
+
+async function removeDomainLimit(domain) {
+    if (!confirm(`Remove time limit for ${domain}?`)) return;
+    
+    try {
+        await chrome.runtime.sendMessage({
+            type: 'SET_DOMAIN_LIMIT',
+            domain,
+            dailyLimit: null
+        });
+        
+        delete domainLimits[domain];
+        renderDomainLimits();
+    } catch (error) {
+        console.error('Error removing domain limit:', error);
+        alert('Failed to remove domain limit');
+    }
 }
 
 // =====================
@@ -314,6 +609,7 @@ async function resetToday() {
         });
 
         await loadData();
+        await loadStats(currentPeriod);
         alert('Today\'s usage has been reset');
     }
 }
@@ -328,10 +624,12 @@ async function clearAllData() {
                 categories: {},
                 usage: {},
                 activeState: {},
-                settings: {}
+                settings: {},
+                domainLimits: {}
             });
 
             await loadData();
+            await loadStats(currentPeriod);
             alert('All data has been cleared');
         }
     }

@@ -34,10 +34,6 @@ export async function canAccessCategory(categoryKey) {
     const activeState = await getCategoryActiveState(categoryKey);
     const now = Date.now();
 
-    // #region agent log - Hypothesis A: Verify usage value used for limit check
-    fetch('http://127.0.0.1:7243/ingest/f58fe424-027a-4013-906b-b56db8894df6',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sessionManager.js:canAccessCategory',message:'Limit check using usage.totalTime',data:{categoryKey,usageTotalTime:usage.totalTime,dailyLimit:category.dailyLimit,percentUsed:category.dailyLimit?(usage.totalTime/category.dailyLimit*100).toFixed(1):null},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-
     // Check 1: Forbidden time period
     if (isInForbiddenPeriod(category.forbiddenPeriods)) {
         return {
