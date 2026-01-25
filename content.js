@@ -16,6 +16,7 @@ let overlayElement = null;
 let isActiveTab = false;  // Track if this tab is the active one for the category
 let countdownInterval = null;
 let contextInvalidated = false;  // Track if extension context is invalidated
+let messageListenerAdded = false;  // Track if message listener is added to prevent duplicates
 
 /**
  * Handle extension context invalidation (happens when extension is reloaded)
@@ -33,9 +34,12 @@ function handleContextInvalidated() {
     }
 
     // Remove message listener
-    try {
-        chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
-    } catch (e) { }
+    if (messageListenerAdded) {
+        try {
+            chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
+        } catch (e) { }
+        messageListenerAdded = false;
+    }
 }
 
 // =====================
@@ -99,8 +103,11 @@ async function initialize() {
     // Start session and detector
     await startTracking();
 
-    // Listen for messages from background
-    chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+    // Listen for messages from background (only add once)
+    if (!messageListenerAdded) {
+        chrome.runtime.onMessage.addListener(handleBackgroundMessage);
+        messageListenerAdded = true;
+    }
 
     // Handle SPA navigation using more efficient method
     setupNavigationObserver();
@@ -119,6 +126,8 @@ function cleanup() {
     if (currentCategoryKey) {
         sendMessage({ type: 'UNREGISTER_TAB', categoryKey: currentCategoryKey });
     }
+    // Note: We don't remove the message listener here because it should persist
+    // for operations like DAILY_RESET and REST_PERIODS_ENDED that need to reinitialize
 }
 
 // =====================

@@ -21,7 +21,8 @@ import {
     getTodayStats,
     getWeekStats,
     getMonthStats,
-    getPendingTimeUpdates
+    getPendingTimeUpdates,
+    flushPendingTimeUpdates
 } from './utils/storage.js';
 
 
@@ -92,6 +93,12 @@ async function setupAlarms() {
     chrome.alarms.create('dailyCleanup', {
         periodInMinutes: 24 * 60
     });
+
+    // Flush pending time updates every minute as backup
+    // (setInterval in storage.js may be suspended when Service Worker is idle)
+    chrome.alarms.create('flushPendingData', {
+        periodInMinutes: 1
+    });
 }
 
 function getMidnightTimestamp() {
@@ -114,6 +121,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
             break;
         case 'dailyCleanup':
             await cleanupOldData();
+            break;
+        case 'flushPendingData':
+            await flushPendingTimeUpdates();
             break;
     }
 });

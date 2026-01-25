@@ -80,10 +80,14 @@ const storageCache = {
 };
 
 // Batch write interval (write to storage every 10 seconds if there are pending changes)
+// Note: In Service Workers, setInterval may be suspended when idle.
+// The background.js uses chrome.alarms as a backup to call flushPendingTimeUpdates periodically.
 const BATCH_WRITE_INTERVAL = 10000;
 
 /**
  * Initialize the batch write system
+ * Uses setInterval for frequent updates during active periods.
+ * Background.js also sets up a chrome.alarm as a backup for when the worker wakes up.
  */
 function initBatchWriteSystem() {
     if (storageCache.writeInterval) return;
@@ -95,8 +99,9 @@ function initBatchWriteSystem() {
 
 /**
  * Flush all pending time updates to storage (both category and domain level)
+ * This function is also exported so background.js can call it via chrome.alarms
  */
-async function flushPendingTimeUpdates() {
+export async function flushPendingTimeUpdates() {
     if (storageCache.pendingTimeUpdates.size === 0 && storageCache.pendingDomainUpdates.size === 0) return;
 
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
@@ -158,6 +163,7 @@ async function getCachedUsage() {
 
 // Initialize batch write system when module loads
 initBatchWriteSystem();
+
 
 // =====================
 // Utility Functions
@@ -330,7 +336,7 @@ export function getTomorrowMidnight() {
 // =====================
 
 /**
- * Initialize storage with defaults
+ * Initialize storage with defaults and migrate old data structures
  */
 export async function initializeStorage() {
     const data = await chrome.storage.local.get(null);
@@ -354,6 +360,24 @@ export async function initializeStorage() {
 
     if (!data[STORAGE_KEYS.DOMAIN_LIMITS]) {
         updates[STORAGE_KEYS.DOMAIN_LIMITS] = {};
+    }
+
+    // Migrate old usage data to include byDomain field
+    const existingUsage = data[STORAGE_KEYS.USAGE];
+    if (existingUsage) {
+        let needsMigration = false;
+        for (const [dateKey, dayUsage] of Object.entries(existingUsage)) {
+            for (const [categoryKey, categoryUsage] of Object.entries(dayUsage)) {
+                if (categoryUsage && !categoryUsage.byDomain) {
+                    categoryUsage.byDomain = {};
+                    needsMigration = true;
+                }
+            }
+        }
+        if (needsMigration) {
+            updates[STORAGE_KEYS.USAGE] = existingUsage;
+            console.log('[Storage] Migrated usage data to include byDomain field');
+        }
     }
 
     if (Object.keys(updates).length > 0) {
