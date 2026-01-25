@@ -259,8 +259,8 @@ function showBlockedOverlay(access) {
             <p class="overlay-message">${message}</p>
             ${countdown ? `<p class="overlay-countdown">${countdown}</p>` : ''}
             <div class="overlay-stats">
-                ${access.totalTime ? `<span>Today: ${formatSeconds(access.totalTime)}</span>` : ''}
-                ${access.dailyLimit ? `<span>Limit: ${formatSeconds(access.dailyLimit)}</span>` : ''}
+                ${(access.totalTime || access.used) ? `<span>Today: ${formatSeconds(access.totalTime || access.used)}</span>` : ''}
+                ${(access.dailyLimit || access.limit) ? `<span>Limit: ${formatSeconds(access.dailyLimit || access.limit)}</span>` : ''}
             </div>
         </div>
     `;
@@ -555,7 +555,7 @@ class VideoDetector {
     start() {
         this.findVideo();
         this.setupObserver();
-        this.attachVideoListeners();
+        // Note: attachVideoListeners is called within findVideo() when video is found
         // Periodic report even if timeupdate fires infrequently
         this.reportInterval = setInterval(() => this.reportAccumulatedTime(), 5000);
     }

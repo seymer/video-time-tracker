@@ -44,6 +44,11 @@ let lastDateKey = getTodayKey();
 // Map<categoryKey, { tabId, lastActivity }>
 const activeTabsPerCategory = new Map();
 
+// Tab coordination thresholds
+const TAB_STALE_THRESHOLD_REGISTER = 30000;  // 30 seconds for tab registration
+const TAB_STALE_THRESHOLD_ACTIVITY = 10000;  // 10 seconds for activity reports
+
+
 // =====================
 // Initialization
 // =====================
@@ -363,9 +368,8 @@ function handleRegisterTab(categoryKey, sender) {
         return { success: true, isActive: true };
     }
 
-    // Another tab is active - check if it's stale (no activity for 30 seconds)
-    const staleThreshold = 30000;
-    if (Date.now() - existing.lastActivity > staleThreshold) {
+    // Another tab is active - check if it's stale
+    if (Date.now() - existing.lastActivity > TAB_STALE_THRESHOLD_REGISTER) {
         // Take over as active tab
         activeTabsPerCategory.set(categoryKey, {
             tabId,
@@ -416,8 +420,7 @@ function handleReportActivity(categoryKey, isActive, sender) {
         }
 
         // Another tab is active, check if stale
-        const staleThreshold = 10000; // 10 seconds for activity reports
-        if (Date.now() - existing.lastActivity > staleThreshold) {
+        if (Date.now() - existing.lastActivity > TAB_STALE_THRESHOLD_ACTIVITY) {
             activeTabsPerCategory.set(categoryKey, {
                 tabId,
                 lastActivity: Date.now()
