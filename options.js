@@ -18,10 +18,75 @@ let domainLimits = {};
 // =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Restore tab and period from URL hash FIRST (sync, before any await)
+    const { tab, period } = parseHash();
+    switchToTab(tab);
+    switchToPeriod(period);
+    currentPeriod = period;
+    
+    // Show content now that correct tab is set
+    document.body.classList.add('ready');
+    
     await loadData();
     setupEventListeners();
     await loadStats(currentPeriod);
 });
+
+// Handle browser back/forward navigation
+window.addEventListener('hashchange', () => {
+    const { tab, period } = parseHash();
+    switchToTab(tab);
+    if (period !== currentPeriod) {
+        switchToPeriod(period);
+        loadStats(period);
+    }
+});
+
+/**
+ * Parse URL hash into tab and period
+ * Format: #stats, #settings, #stats/week, #stats/month
+ */
+function parseHash() {
+    const hash = window.location.hash.slice(1);
+    const [tab, period] = hash.split('/');
+    return {
+        tab: (tab === 'settings') ? 'settings' : 'stats',
+        period: ['day', 'week', 'month'].includes(period) ? period : 'day'
+    };
+}
+
+/**
+ * Update URL hash
+ */
+function updateHash(tab, period) {
+    const newHash = period === 'day' ? tab : `${tab}/${period}`;
+    window.history.replaceState(null, '', `#${newHash}`);
+}
+
+/**
+ * Switch to a specific tab
+ */
+function switchToTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    
+    const tabBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    const tabContent = document.getElementById(`${tabId}-tab`);
+    
+    if (tabBtn && tabContent) {
+        tabBtn.classList.add('active');
+        tabContent.classList.add('active');
+    }
+}
+
+/**
+ * Switch to a specific period
+ */
+function switchToPeriod(period) {
+    currentPeriod = period;
+    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.period-btn[data-period="${period}"]`)?.classList.add('active');
+}
 
 async function loadData() {
     try {
@@ -321,20 +386,19 @@ function setupEventListeners() {
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-            
-            btn.classList.add('active');
-            document.getElementById(`${btn.dataset.tab}-tab`).classList.add('active');
+            const tabId = btn.dataset.tab;
+            switchToTab(tabId);
+            updateHash(tabId, currentPeriod);
         });
     });
     
     // Period switching
     document.querySelectorAll('.period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            loadStats(btn.dataset.period);
+            const period = btn.dataset.period;
+            switchToPeriod(period);
+            updateHash('stats', period);
+            loadStats(period);
         });
     });
 
