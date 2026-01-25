@@ -87,7 +87,7 @@ const BATCH_WRITE_INTERVAL = 10000;
  */
 function initBatchWriteSystem() {
     if (storageCache.writeInterval) return;
-    
+
     storageCache.writeInterval = setInterval(async () => {
         await flushPendingTimeUpdates();
     }, BATCH_WRITE_INTERVAL);
@@ -98,15 +98,15 @@ function initBatchWriteSystem() {
  */
 async function flushPendingTimeUpdates() {
     if (storageCache.pendingTimeUpdates.size === 0 && storageCache.pendingDomainUpdates.size === 0) return;
-    
+
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
     const todayKey = getTodayKey();
-    
+
     if (!usage[todayKey]) usage[todayKey] = {};
-    
+
     let hasChanges = false;
-    
+
     // Flush category-level time updates
     for (const [categoryKey, seconds] of storageCache.pendingTimeUpdates.entries()) {
         if (!usage[todayKey][categoryKey]) {
@@ -118,7 +118,7 @@ async function flushPendingTimeUpdates() {
         usage[todayKey][categoryKey].totalTime += seconds;
         hasChanges = true;
     }
-    
+
     // Flush domain-level time updates
     for (const [key, seconds] of storageCache.pendingDomainUpdates.entries()) {
         const [categoryKey, domain] = key.split(':');
@@ -128,18 +128,18 @@ async function flushPendingTimeUpdates() {
         if (!usage[todayKey][categoryKey].byDomain) {
             usage[todayKey][categoryKey].byDomain = {};
         }
-        usage[todayKey][categoryKey].byDomain[domain] = 
+        usage[todayKey][categoryKey].byDomain[domain] =
             (usage[todayKey][categoryKey].byDomain[domain] || 0) + seconds;
         hasChanges = true;
     }
-    
+
     if (hasChanges) {
         await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
         storageCache.usage = usage;
         storageCache.lastUsageWrite = Date.now();
         console.log(`[StorageCache] Flushed ${storageCache.pendingTimeUpdates.size} category updates, ${storageCache.pendingDomainUpdates.size} domain updates`);
     }
-    
+
     storageCache.pendingTimeUpdates.clear();
     storageCache.pendingDomainUpdates.clear();
 }
@@ -212,18 +212,18 @@ export function matchDomain(hostname, pattern) {
     // Normalize both to lowercase
     hostname = hostname.toLowerCase();
     pattern = pattern.toLowerCase();
-    
+
     // Exact match
     if (hostname === pattern) {
         return true;
     }
-    
+
     // Check if hostname is a subdomain of pattern
     // hostname must end with ".pattern"
     if (hostname.endsWith('.' + pattern)) {
         return true;
     }
-    
+
     return false;
 }
 
@@ -436,11 +436,11 @@ export async function getTodayUsage() {
 export async function getCategoryUsage(categoryKey) {
     const todayUsage = await getTodayUsage();
     const baseUsage = todayUsage[categoryKey] || { totalTime: 0, sessions: [] };
-    
+
     // Include pending time in the returned total for accurate limit checking
     const pendingTime = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
     const totalWithPending = baseUsage.totalTime + pendingTime;
-    
+
     return {
         totalTime: totalWithPending,
         sessions: baseUsage.sessions
@@ -453,23 +453,23 @@ export async function getCategoryUsage(categoryKey) {
  */
 export async function addCategoryTime(categoryKey, seconds) {
     const todayKey = getTodayKey();
-    
+
     // Add to pending updates (will be flushed periodically)
     const currentPending = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
     storageCache.pendingTimeUpdates.set(categoryKey, currentPending + seconds);
-    
+
     // Get current usage from cache or storage
     const usage = await getCachedUsage();
-    
+
     if (!usage[todayKey]) usage[todayKey] = {};
     if (!usage[todayKey][categoryKey]) {
         usage[todayKey][categoryKey] = { totalTime: 0, sessions: [] };
     }
-    
+
     // Include pending time in the returned total for accurate limit checking
     const pendingTime = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
     const totalWithPending = usage[todayKey][categoryKey].totalTime + pendingTime;
-    
+
     // If we're close to a limit, flush immediately to ensure accuracy
     // This prevents users from exceeding limits due to batching delays
     const categories = await getCategories();
@@ -477,7 +477,7 @@ export async function addCategoryTime(categoryKey, seconds) {
     if (category?.dailyLimit && totalWithPending >= category.dailyLimit * 0.95) {
         await flushPendingTimeUpdates();
     }
-    
+
     return {
         totalTime: totalWithPending,
         sessions: usage[todayKey][categoryKey].sessions
@@ -490,7 +490,7 @@ export async function addCategoryTime(categoryKey, seconds) {
 export async function addCategoryTimeImmediate(categoryKey, seconds) {
     // Flush any pending updates first
     await flushPendingTimeUpdates();
-    
+
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
     const todayKey = getTodayKey();
@@ -504,7 +504,7 @@ export async function addCategoryTimeImmediate(categoryKey, seconds) {
 
     await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
     storageCache.usage = usage;
-    
+
     return usage[todayKey][categoryKey];
 }
 
@@ -634,14 +634,14 @@ export async function clearActiveStates() {
 export async function performDailyReset() {
     // First, flush any pending time updates to ensure data integrity
     await flushPendingTimeUpdates();
-    
+
     const now = Date.now();
     const activeState = await getActiveState();
     const yesterdayKey = getYesterdayKey();
     const todayKey = getTodayKey();
-    
+
     console.log(`[DailyReset] Starting reset. Yesterday: ${yesterdayKey}, Today: ${todayKey}`);
-    
+
     // Process each category's active state
     for (const [categoryKey, state] of Object.entries(activeState)) {
         if (state.inSession && state.sessionStart) {
@@ -649,26 +649,26 @@ export async function performDailyReset() {
             const midnightToday = new Date();
             midnightToday.setHours(0, 0, 0, 0);
             const midnightTimestamp = midnightToday.getTime();
-            
+
             // End the session using yesterday's date key
             await endCategorySessionForDate(categoryKey, yesterdayKey);
-            
+
             console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday`);
         }
-        
+
         // Clear rest periods - they don't carry over to the new day
         if (state.inRest) {
             console.log(`[DailyReset] Clearing rest period for ${categoryKey}`);
         }
     }
-    
+
     // Clear all active states for the new day
     // Users will start fresh sessions when they visit sites
     await clearActiveStates();
-    
+
     // Clear the usage cache to force fresh read
     storageCache.usage = null;
-    
+
     console.log('[DailyReset] Daily reset completed - all sessions ended and states cleared');
 }
 
@@ -678,13 +678,13 @@ export async function performDailyReset() {
  */
 export async function checkAndHandleDateChange(lastKnownDateKey) {
     const currentDateKey = getTodayKey();
-    
+
     if (currentDateKey !== lastKnownDateKey) {
         console.log(`[DateChange] Date changed from ${lastKnownDateKey} to ${currentDateKey}`);
         await performDailyReset();
         return { changed: true, newDateKey: currentDateKey };
     }
-    
+
     return { changed: false, newDateKey: currentDateKey };
 }
 
@@ -721,25 +721,25 @@ export async function cleanupOldData(retentionDays = DATA_RETENTION_DAYS) {
  */
 export async function addDomainTime(categoryKey, domain, seconds) {
     const key = `${categoryKey}:${domain}`;
-    
+
     // Add to pending updates (will be flushed periodically)
     const currentPending = storageCache.pendingDomainUpdates.get(key) || 0;
     storageCache.pendingDomainUpdates.set(key, currentPending + seconds);
-    
+
     // Get current usage including pending time
     const todayKey = getTodayKey();
     const usage = await getCachedUsage();
-    
+
     const storedTime = usage[todayKey]?.[categoryKey]?.byDomain?.[domain] || 0;
     const pendingTime = storageCache.pendingDomainUpdates.get(key) || 0;
     const totalWithPending = storedTime + pendingTime;
-    
+
     // Check domain limit and flush if close to limit
     const limit = await getDomainLimit(domain);
     if (limit?.dailyLimit && totalWithPending >= limit.dailyLimit * 0.95) {
         await flushPendingTimeUpdates();
     }
-    
+
     return totalWithPending;
 }
 
@@ -750,7 +750,7 @@ export async function getDomainUsage(domain) {
     const todayUsage = await getTodayUsage();
     let totalTime = 0;
     let categoryKey = null;
-    
+
     for (const [key, categoryUsage] of Object.entries(todayUsage)) {
         if (categoryUsage.byDomain && categoryUsage.byDomain[domain]) {
             totalTime = categoryUsage.byDomain[domain];
@@ -758,7 +758,7 @@ export async function getDomainUsage(domain) {
             break;
         }
     }
-    
+
     // Include pending time
     for (const [pendingKey, seconds] of storageCache.pendingDomainUpdates.entries()) {
         const [catKey, dom] = pendingKey.split(':');
@@ -768,7 +768,7 @@ export async function getDomainUsage(domain) {
             break;
         }
     }
-    
+
     return { totalTime, categoryKey };
 }
 
@@ -779,7 +779,7 @@ export async function getDomainUsageForDateRange(startDate, endDate) {
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
     const result = {};
-    
+
     for (const [dateKey, dayUsage] of Object.entries(usage)) {
         const date = new Date(dateKey);
         if (date >= startDate && date <= endDate) {
@@ -796,7 +796,7 @@ export async function getDomainUsageForDateRange(startDate, endDate) {
             }
         }
     }
-    
+
     return result;
 }
 
@@ -819,13 +819,13 @@ export async function getDomainLimits() {
  */
 export async function setDomainLimit(domain, dailyLimit) {
     const limits = await getDomainLimits();
-    
+
     if (dailyLimit === null || dailyLimit === undefined) {
         delete limits[domain];
     } else {
         limits[domain] = { dailyLimit };
     }
-    
+
     await chrome.storage.local.set({ [STORAGE_KEYS.DOMAIN_LIMITS]: limits });
     return limits;
 }
@@ -845,10 +845,10 @@ export async function getDomainLimit(domain) {
 export async function checkDomainLimit(domain) {
     const limit = await getDomainLimit(domain);
     if (!limit) return null;  // No individual limit set
-    
+
     const usage = await getDomainUsage(domain);
     const remaining = Math.max(0, limit.dailyLimit - usage.totalTime);
-    
+
     return {
         allowed: usage.totalTime < limit.dailyLimit,
         remaining,
@@ -867,18 +867,18 @@ export async function checkDomainLimit(domain) {
 export function getCurrentWeekRange() {
     const now = new Date();
     const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, ...
-    
+
     // Calculate days since Monday (week starts on Monday)
     const daysSinceMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    
+
     const monday = new Date(now);
     monday.setDate(now.getDate() - daysSinceMonday);
     monday.setHours(0, 0, 0, 0);
-    
+
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
     sunday.setHours(23, 59, 59, 999);
-    
+
     return { start: monday, end: sunday };
 }
 
@@ -887,58 +887,109 @@ export function getCurrentWeekRange() {
  */
 export function getCurrentMonthRange() {
     const now = new Date();
-    
+
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
     firstDay.setHours(0, 0, 0, 0);
-    
+
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
     lastDay.setHours(23, 59, 59, 999);
-    
+
     return { start: firstDay, end: lastDay };
 }
 
 /**
  * Get usage statistics for a date range
  * Returns both category-level and domain-level stats
+ * IMPORTANT: Includes pending (unflushed) time for today to ensure accurate display
  */
 export async function getUsageStats(startDate, endDate) {
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
-    
+    const todayKey = getTodayKey();
+
     const stats = {
         totalTime: 0,
         byCategory: {},
         byDomain: {},
         byDate: {}
     };
-    
+
     for (const [dateKey, dayUsage] of Object.entries(usage)) {
         const date = new Date(dateKey);
         if (date >= startDate && date <= endDate) {
             stats.byDate[dateKey] = { totalTime: 0, byCategory: {}, byDomain: {} };
-            
+
             for (const [categoryKey, categoryUsage] of Object.entries(dayUsage)) {
-                const categoryTime = categoryUsage.totalTime || 0;
-                
+                let categoryTime = categoryUsage.totalTime || 0;
+
+                // Include pending time for today's data
+                if (dateKey === todayKey) {
+                    const pendingTime = storageCache.pendingTimeUpdates.get(categoryKey) || 0;
+                    categoryTime += pendingTime;
+                }
+
                 // Category stats
                 stats.byCategory[categoryKey] = (stats.byCategory[categoryKey] || 0) + categoryTime;
                 stats.byDate[dateKey].byCategory[categoryKey] = categoryTime;
                 stats.byDate[dateKey].totalTime += categoryTime;
                 stats.totalTime += categoryTime;
-                
+
                 // Domain stats
                 if (categoryUsage.byDomain) {
                     for (const [domain, domainTime] of Object.entries(categoryUsage.byDomain)) {
-                        stats.byDomain[domain] = (stats.byDomain[domain] || 0) + domainTime;
-                        stats.byDate[dateKey].byDomain[domain] = (stats.byDate[dateKey].byDomain[domain] || 0) + domainTime;
+                        let actualDomainTime = domainTime;
+
+                        // Include pending domain time for today's data
+                        if (dateKey === todayKey) {
+                            const pendingKey = `${categoryKey}:${domain}`;
+                            const pendingDomainTime = storageCache.pendingDomainUpdates.get(pendingKey) || 0;
+                            actualDomainTime += pendingDomainTime;
+                        }
+
+                        stats.byDomain[domain] = (stats.byDomain[domain] || 0) + actualDomainTime;
+                        stats.byDate[dateKey].byDomain[domain] = (stats.byDate[dateKey].byDomain[domain] || 0) + actualDomainTime;
+                    }
+                }
+            }
+
+            // Also check for pending time in categories not yet in storage for today
+            if (dateKey === todayKey) {
+                for (const [categoryKey, pendingTime] of storageCache.pendingTimeUpdates.entries()) {
+                    if (!dayUsage[categoryKey]) {
+                        // This category has pending time but no stored data yet
+                        stats.byCategory[categoryKey] = (stats.byCategory[categoryKey] || 0) + pendingTime;
+                        stats.byDate[dateKey].byCategory[categoryKey] = (stats.byDate[dateKey].byCategory[categoryKey] || 0) + pendingTime;
+                        stats.byDate[dateKey].totalTime += pendingTime;
+                        stats.totalTime += pendingTime;
                     }
                 }
             }
         }
     }
-    
+
+    // Handle case where today has pending time but no storage entry yet
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (today >= startDate && today <= endDate && !stats.byDate[todayKey] && storageCache.pendingTimeUpdates.size > 0) {
+        stats.byDate[todayKey] = { totalTime: 0, byCategory: {}, byDomain: {} };
+
+        for (const [categoryKey, pendingTime] of storageCache.pendingTimeUpdates.entries()) {
+            stats.byCategory[categoryKey] = (stats.byCategory[categoryKey] || 0) + pendingTime;
+            stats.byDate[todayKey].byCategory[categoryKey] = pendingTime;
+            stats.byDate[todayKey].totalTime += pendingTime;
+            stats.totalTime += pendingTime;
+        }
+
+        for (const [key, pendingTime] of storageCache.pendingDomainUpdates.entries()) {
+            const [, domain] = key.split(':');
+            stats.byDomain[domain] = (stats.byDomain[domain] || 0) + pendingTime;
+            stats.byDate[todayKey].byDomain[domain] = (stats.byDate[todayKey].byDomain[domain] || 0) + pendingTime;
+        }
+    }
+
     return stats;
 }
+
 
 /**
  * Get today's statistics
@@ -948,7 +999,7 @@ export async function getTodayStats() {
     today.setHours(0, 0, 0, 0);
     const endOfDay = new Date(today);
     endOfDay.setHours(23, 59, 59, 999);
-    
+
     return getUsageStats(today, endOfDay);
 }
 
@@ -968,4 +1019,18 @@ export async function getMonthStats() {
     return getUsageStats(start, end);
 }
 
+/**
+ * Get pending (unflushed) time updates for all categories
+ * Used by options page to display accurate usage including pending time
+ * @returns {Object} Map of categoryKey -> pending seconds
+ */
+export function getPendingTimeUpdates() {
+    const pending = {};
+    for (const [categoryKey, seconds] of storageCache.pendingTimeUpdates.entries()) {
+        pending[categoryKey] = seconds;
+    }
+    return pending;
+}
+
 export { STORAGE_KEYS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS, DATA_RETENTION_DAYS };
+

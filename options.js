@@ -23,10 +23,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     switchToTab(tab);
     switchToPeriod(period);
     currentPeriod = period;
-    
+
     // Show content now that correct tab is set
     document.body.classList.add('ready');
-    
+
     await loadData();
     setupEventListeners();
     await loadStats(currentPeriod);
@@ -69,10 +69,10 @@ function updateHash(tab, period) {
 function switchToTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    
+
     const tabBtn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
     const tabContent = document.getElementById(`${tabId}-tab`);
-    
+
     if (tabBtn && tabContent) {
         tabBtn.classList.add('active');
         tabContent.classList.add('active');
@@ -94,7 +94,15 @@ async function loadData() {
         categories = data.categories || {};
         domainLimits = data.domainLimits || {};
 
-        renderUsageSummary(data.usage || {}, data.activeState || {});
+        // Get pending time updates from background to ensure accurate display
+        let pendingTime = {};
+        try {
+            pendingTime = await chrome.runtime.sendMessage({ type: 'GET_PENDING_TIME' }) || {};
+        } catch (e) {
+            console.warn('Could not get pending time:', e);
+        }
+
+        renderUsageSummary(data.usage || {}, data.activeState || {}, pendingTime);
         renderCategories();
         renderDomainLimits();
     } catch (error) {
@@ -104,7 +112,7 @@ async function loadData() {
 
 async function loadStats(period) {
     currentPeriod = period;
-    
+
     try {
         let stats;
         switch (period) {
@@ -118,7 +126,7 @@ async function loadStats(period) {
                 stats = await chrome.runtime.sendMessage({ type: 'GET_MONTH_STATS' });
                 break;
         }
-        
+
         currentStats = stats;
         renderStats(stats, period);
     } catch (error) {
@@ -132,22 +140,22 @@ async function loadStats(period) {
 
 function renderStats(stats, period) {
     if (!stats) return;
-    
+
     // Summary cards
     document.getElementById('totalTime').textContent = formatTime(stats.totalTime);
     document.getElementById('sitesVisited').textContent = Object.keys(stats.byDomain || {}).length;
-    
+
     // Calculate daily average
     const daysCount = Object.keys(stats.byDate || {}).length || 1;
     const avgDaily = stats.totalTime / daysCount;
     document.getElementById('avgDaily').textContent = formatTime(avgDaily);
-    
+
     // Render chart
     renderChart(stats, period);
-    
+
     // Render domain breakdown
     renderDomainBreakdown(stats);
-    
+
     // Render category breakdown
     renderCategoryBreakdown(stats);
 }
@@ -155,10 +163,10 @@ function renderStats(stats, period) {
 function renderChart(stats, period) {
     const chartContainer = document.getElementById('barChart');
     const labelsContainer = document.getElementById('chartLabels');
-    
+
     const byDate = stats.byDate || {};
     const dates = Object.keys(byDate).sort();
-    
+
     if (dates.length === 0) {
         chartContainer.innerHTML = `
             <div class="empty-state">
@@ -169,16 +177,16 @@ function renderChart(stats, period) {
         labelsContainer.innerHTML = '';
         return;
     }
-    
+
     // Find max value for scaling
     const maxTime = Math.max(...dates.map(d => byDate[d].totalTime)) || 1;
-    
+
     // Generate bars
     chartContainer.innerHTML = dates.map(date => {
         const dayData = byDate[date];
         const height = Math.max(5, (dayData.totalTime / maxTime) * 100);
         const formattedTime = formatTime(dayData.totalTime);
-        
+
         return `
             <div class="bar-wrapper">
                 <div class="bar" style="height: ${height}%">
@@ -187,12 +195,12 @@ function renderChart(stats, period) {
             </div>
         `;
     }).join('');
-    
+
     // Generate labels
     labelsContainer.innerHTML = dates.map(date => {
         const d = new Date(date);
         let label;
-        
+
         if (period === 'day') {
             label = 'Today';
         } else if (period === 'week') {
@@ -200,7 +208,7 @@ function renderChart(stats, period) {
         } else {
             label = d.getDate();
         }
-        
+
         return `<div class="chart-label">${label}</div>`;
     }).join('');
 }
@@ -208,11 +216,11 @@ function renderChart(stats, period) {
 function renderDomainBreakdown(stats) {
     const container = document.getElementById('domainBreakdown');
     const byDomain = stats.byDomain || {};
-    
+
     const sortedDomains = Object.entries(byDomain)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 10);
-    
+
     if (sortedDomains.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -222,13 +230,13 @@ function renderDomainBreakdown(stats) {
         `;
         return;
     }
-    
+
     const maxTime = sortedDomains[0][1] || 1;
-    
+
     container.innerHTML = sortedDomains.map(([domain, time]) => {
         const percentage = (time / maxTime) * 100;
         const icon = domain.charAt(0).toUpperCase();
-        
+
         return `
             <div class="domain-item">
                 <div class="domain-info">
@@ -247,10 +255,10 @@ function renderDomainBreakdown(stats) {
 function renderCategoryBreakdown(stats) {
     const container = document.getElementById('categoryBreakdown');
     const byCategory = stats.byCategory || {};
-    
+
     const sortedCategories = Object.entries(byCategory)
         .sort((a, b) => b[1] - a[1]);
-    
+
     if (sortedCategories.length === 0) {
         container.innerHTML = `
             <div class="empty-state">
@@ -260,13 +268,13 @@ function renderCategoryBreakdown(stats) {
         `;
         return;
     }
-    
+
     const maxTime = sortedCategories[0][1] || 1;
-    
+
     container.innerHTML = sortedCategories.map(([key, time]) => {
         const category = categories[key] || { name: key };
         const percentage = (time / maxTime) * 100;
-        
+
         return `
             <div class="domain-item">
                 <div class="domain-info">
@@ -286,7 +294,7 @@ function renderCategoryBreakdown(stats) {
 // Settings Rendering
 // =====================
 
-function renderUsageSummary(usage, activeState) {
+function renderUsageSummary(usage, activeState, pendingTime = {}) {
     const container = document.getElementById('usageSummary');
     const today = getTodayKey();
     const todayUsage = usage[today] || {};
@@ -299,8 +307,13 @@ function renderUsageSummary(usage, activeState) {
     container.innerHTML = Object.entries(categories).map(([key, category]) => {
         const categoryUsage = todayUsage[key] || { totalTime: 0, sessions: [] };
         const state = activeState[key] || {};
+
+        // Include pending time for accurate display
+        const pending = pendingTime[key] || 0;
+        const totalTimeWithPending = categoryUsage.totalTime + pending;
+
         const percentage = category.dailyLimit
-            ? Math.min(100, (categoryUsage.totalTime / category.dailyLimit) * 100)
+            ? Math.min(100, (totalTimeWithPending / category.dailyLimit) * 100)
             : 0;
 
         const completedSessions = categoryUsage.sessions?.filter(s => s.end).length || 0;
@@ -314,7 +327,7 @@ function renderUsageSummary(usage, activeState) {
         return `
             <div class="usage-item">
                 <div class="category-name">${category.name}</div>
-                <div class="time-used">${formatTime(categoryUsage.totalTime)}</div>
+                <div class="time-used">${formatTime(totalTimeWithPending)}</div>
                 <div class="time-limit">of ${formatTime(category.dailyLimit)}</div>
                 <div class="progress-bar">
                     <div class="progress-fill ${progressClass}" style="width: ${percentage}%"></div>
@@ -361,12 +374,12 @@ function renderCategories() {
 
 function renderDomainLimits() {
     const container = document.getElementById('domainLimitsContainer');
-    
+
     if (Object.keys(domainLimits).length === 0) {
         container.innerHTML = '<p style="color: rgba(255,255,255,0.4); font-size: 13px;">No website-specific limits set.</p>';
         return;
     }
-    
+
     container.innerHTML = Object.entries(domainLimits).map(([domain, config]) => `
         <div class="domain-limit-item" data-domain="${domain}">
             <div class="limit-info">
@@ -391,7 +404,7 @@ function setupEventListeners() {
             updateHash(tabId, currentPeriod);
         });
     });
-    
+
     // Period switching
     document.querySelectorAll('.period-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -435,7 +448,7 @@ function setupEventListeners() {
     document.getElementById('exportBtn').addEventListener('click', exportData);
     document.getElementById('resetTodayBtn').addEventListener('click', resetToday);
     document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
-    
+
     // Domain limits
     document.getElementById('addDomainLimitBtn').addEventListener('click', addDomainLimit);
     document.getElementById('domainLimitsContainer').addEventListener('click', (e) => {
@@ -455,32 +468,32 @@ function setupEventListeners() {
 async function addDomainLimit() {
     const domainInput = document.getElementById('newDomainInput');
     const limitInput = document.getElementById('newDomainLimit');
-    
+
     const domain = domainInput.value.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '');
     const hours = parseFloat(limitInput.value);
-    
+
     if (!domain) {
         alert('Please enter a domain');
         return;
     }
-    
+
     if (!hours || hours <= 0) {
         alert('Please enter a valid limit in hours');
         return;
     }
-    
+
     const dailyLimit = hours * 3600; // Convert to seconds
-    
+
     try {
         await chrome.runtime.sendMessage({
             type: 'SET_DOMAIN_LIMIT',
             domain,
             dailyLimit
         });
-        
+
         domainLimits[domain] = { dailyLimit };
         renderDomainLimits();
-        
+
         domainInput.value = '';
         limitInput.value = '1';
     } catch (error) {
@@ -491,14 +504,14 @@ async function addDomainLimit() {
 
 async function removeDomainLimit(domain) {
     if (!confirm(`Remove time limit for ${domain}?`)) return;
-    
+
     try {
         await chrome.runtime.sendMessage({
             type: 'SET_DOMAIN_LIMIT',
             domain,
             dailyLimit: null
         });
-        
+
         delete domainLimits[domain];
         renderDomainLimits();
     } catch (error) {

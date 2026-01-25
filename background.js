@@ -20,8 +20,10 @@ import {
     setDomainLimit,
     getTodayStats,
     getWeekStats,
-    getMonthStats
+    getMonthStats,
+    getPendingTimeUpdates
 } from './utils/storage.js';
+
 
 import {
     canAccessCategory,
@@ -251,6 +253,9 @@ async function handleMessage(message, sender) {
             case 'CHECK_DOMAIN_LIMIT':
                 return await checkDomainLimit(message.domain);
 
+            case 'GET_PENDING_TIME':
+                return getPendingTimeUpdates();
+
             default:
                 console.warn('Unknown message type:', message.type);
                 return { error: 'Unknown message type' };
@@ -268,7 +273,7 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
         // Check if this tab is the active tab for this category
         // Only count time from the active tab to prevent duplicate counting
         const isCurrentTabActive = isActiveTabForCategory(categoryKey, sender).isActive;
-        
+
         if (tabId && !isCurrentTabActive) {
             // This tab is not the active one, check if it should become active
             const activeTab = activeTabsPerCategory.get(categoryKey);
@@ -306,7 +311,7 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
                     used: domainCheck.used
                 };
             }
-            
+
             // Record domain-level time
             await addDomainTime(categoryKey, domain, seconds);
         }

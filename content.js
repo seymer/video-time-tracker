@@ -24,18 +24,18 @@ function handleContextInvalidated() {
     if (contextInvalidated) return;
     contextInvalidated = true;
     console.log('[TimeTracker] Extension context invalidated, stopping tracking');
-    
+
     // Stop all tracking
     stopTracking();
     if (countdownInterval) {
         clearInterval(countdownInterval);
         countdownInterval = null;
     }
-    
+
     // Remove message listener
     try {
         chrome.runtime.onMessage.removeListener(handleBackgroundMessage);
-    } catch (e) {}
+    } catch (e) { }
 }
 
 // =====================
@@ -45,7 +45,7 @@ function handleContextInvalidated() {
 async function initialize() {
     // Reset context invalidation flag on fresh initialize
     contextInvalidated = false;
-    
+
     // Clean up any previous state
     cleanup();
 
@@ -246,6 +246,10 @@ function showBlockedOverlay(access) {
         title = '🎯 All Sessions Used';
         message = `You've used all ${access.sessionsTotal} sessions today.`;
         countdown = 'Resets at midnight';
+    } else if (access.reason === 'domain_limit') {
+        title = '🌐 Website Limit Reached';
+        message = access.reasonText || `Daily limit for ${access.domain || 'this site'} reached`;
+        countdown = 'Resets at midnight';
     }
 
     overlayElement.innerHTML = `
@@ -287,7 +291,8 @@ function getIconForReason(reason) {
         'rest_period': '☕',
         'session_limit_reached': '⏰',
         'daily_limit': '📅',
-        'sessions_exhausted': '🎯'
+        'sessions_exhausted': '🎯',
+        'domain_limit': '🌐'
     };
     return icons[reason] || '⏳';
 }
@@ -374,12 +379,12 @@ async function handleTabActivated() {
 
 async function sendMessage(message) {
     if (contextInvalidated) return null;
-    
+
     try {
         return await chrome.runtime.sendMessage(message);
     } catch (e) {
         // Check if extension context was invalidated (extension reloaded)
-        if (e.message?.includes('Extension context invalidated') || 
+        if (e.message?.includes('Extension context invalidated') ||
             e.message?.includes('Receiving end does not exist')) {
             handleContextInvalidated();
         } else {
@@ -400,12 +405,12 @@ function setupNavigationObserver() {
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
-    history.pushState = function(...args) {
+    history.pushState = function (...args) {
         originalPushState.apply(this, args);
         handleUrlChange();
     };
 
-    history.replaceState = function(...args) {
+    history.replaceState = function (...args) {
         originalReplaceState.apply(this, args);
         handleUrlChange();
     };
@@ -424,10 +429,10 @@ function setupNavigationObserver() {
     function handleUrlChange() {
         const newUrl = window.location.href;
         if (newUrl === lastUrl) return;
-        
+
         lastUrl = newUrl;
         console.log('[TimeTracker] URL changed:', newUrl);
-        
+
         // Debounce rapid URL changes
         clearTimeout(handleUrlChange.timeout);
         handleUrlChange.timeout = setTimeout(() => {
@@ -475,10 +480,24 @@ async function handleNavigation() {
         }
         currentCategory = category;
         currentCategoryKey = category.key;
-        
+
         // Register for new category
         const registration = await sendMessage({ type: 'REGISTER_TAB', categoryKey: currentCategoryKey });
         isActiveTab = registration?.isActive ?? true;
+    }
+
+    // Check domain-specific limit first (takes priority)
+    const domainCheck = await sendMessage({ type: 'CHECK_DOMAIN_LIMIT', domain: currentDomain });
+    if (domainCheck && !domainCheck.allowed) {
+        showBlockedOverlay({
+            allowed: false,
+            reason: 'domain_limit',
+            reasonText: `Daily limit for ${currentDomain} reached`,
+            domain: currentDomain,
+            limit: domainCheck.limit,
+            used: domainCheck.used
+        });
+        return;
     }
 
     // Check access
@@ -591,10 +610,10 @@ class VideoDetector {
                 this.findVideo();
             }
         });
-        
+
         // Use a more targeted observation - just watch for added/removed nodes
-        this.observer.observe(document.body, { 
-            childList: true, 
+        this.observer.observe(document.body, {
+            childList: true,
             subtree: true,
             attributes: false,
             characterData: false
