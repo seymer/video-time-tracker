@@ -274,9 +274,9 @@ function showBlockedOverlay(access) {
     } else if (access.reason === 'session_limit_reached') {
         title = '⏰ Session Complete';
         message = 'Your session time limit has been reached.';
-        const categories = currentCategory;
-        if (categories?.restDuration) {
-            countdown = `Take a ${formatSeconds(categories.restDuration)} break`;
+        const restDuration = access.restDuration || currentCategory?.restDuration;
+        if (restDuration) {
+            countdown = `<span class="countdown" data-end="${Date.now() + restDuration * 1000}">${formatSeconds(restDuration)} remaining</span>`;
         }
     } else if (access.reason === 'daily_limit') {
         title = '📅 Daily Limit Reached';
@@ -310,6 +310,11 @@ function showBlockedOverlay(access) {
     // Start countdown timer if applicable
     if (access.restRemaining) {
         startCountdownTimer(access.restRemaining);
+    } else if (access.reason === 'session_limit_reached') {
+        const restDuration = access.restDuration || currentCategory?.restDuration;
+        if (restDuration) {
+            startCountdownTimer(restDuration);
+        }
     }
 }
 
