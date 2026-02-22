@@ -1,56 +1,20 @@
 {
     "manifest_version": 3,
     "name": "Advanced Time Tracker",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Master your screen time with effective usage tracking, smart session limits, and mandatory rest periods. Stop doomscrolling today!",
     "permissions": [
         "storage",
-        "alarms"
+        "alarms",
+        "scripting"
     ],
     "host_permissions": [
-        "*://*.youtube.com/*",
-        "*://*.vimeo.com/*",
-        "*://*.netflix.com/*",
-        "*://*.reddit.com/*",
-        "*://*.wikipedia.org/*",
-        "*://*.medium.com/*",
-        "*://*.twitter.com/*",
-        "*://*.x.com/*",
-        "*://*.facebook.com/*",
-        "*://*.instagram.com/*",
-        "*://*.tiktok.com/*",
-        "*://*.twitch.tv/*"
+        "<all_urls>"
     ],
     "background": {
         "service_worker": "background.js",
         "type": "module"
     },
-    "content_scripts": [
-        {
-            "matches": [
-                "*://*.youtube.com/*",
-                "*://*.vimeo.com/*",
-                "*://*.netflix.com/*",
-                "*://*.reddit.com/*",
-                "*://*.wikipedia.org/*",
-                "*://*.medium.com/*",
-                "*://*.twitter.com/*",
-                "*://*.x.com/*",
-                "*://*.facebook.com/*",
-                "*://*.instagram.com/*",
-                "*://*.tiktok.com/*",
-                "*://*.twitch.tv/*"
-            ],
-            "js": [
-                "content.js"
-            ],
-            "css": [
-                "overlay.css"
-            ],
-            "run_at": "document_idle",
-            "all_frames": true
-        }
-    ],
     "options_page": "options.html",
     "action": {
         "default_popup": "popup.html",
