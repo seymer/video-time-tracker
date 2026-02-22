@@ -17,6 +17,8 @@ let isActiveTab = false;  // Track if this tab is the active one for the categor
 let countdownInterval = null;
 let contextInvalidated = false;  // Track if extension context is invalidated
 let messageListenerAdded = false;  // Track if message listener is added to prevent duplicates
+let mediaSuppressInterval = null;  // Periodic interval to keep media paused while blocked
+let mediaSuppressObserver = null;  // MutationObserver to catch dynamically added media elements
 
 /**
  * Handle extension context invalidation (happens when extension is reloaded)
@@ -28,6 +30,7 @@ function handleContextInvalidated() {
 
     // Stop all tracking
     stopTracking();
+    stopMediaSuppression();
     if (countdownInterval) {
         clearInterval(countdownInterval);
         countdownInterval = null;
@@ -118,6 +121,7 @@ async function initialize() {
  */
 function cleanup() {
     stopTracking();
+    stopMediaSuppression();
     if (countdownInterval) {
         clearInterval(countdownInterval);
         countdownInterval = null;
@@ -190,24 +194,50 @@ async function handleTimeUpdate(seconds) {
 function handleLimitReached(result) {
     isBlocked = true;
     stopTracking();
-
-    // Pause any media
-    pauseAllMedia();
-
-    // Show overlay
     showBlockedOverlay(result);
 }
 
 function pauseAllMedia() {
-    // Pause videos
     document.querySelectorAll('video').forEach(v => {
         try { v.pause(); } catch (e) { }
     });
 
-    // Pause audio
     document.querySelectorAll('audio').forEach(a => {
         try { a.pause(); } catch (e) { }
     });
+}
+
+/**
+ * Start continuously suppressing media playback while the page is blocked.
+ * Handles videos that autoplay after the overlay is already shown (e.g. after
+ * a page refresh when the session is already expired).
+ */
+function startMediaSuppression() {
+    stopMediaSuppression();
+
+    pauseAllMedia();
+
+    mediaSuppressInterval = setInterval(pauseAllMedia, 1000);
+
+    mediaSuppressObserver = new MutationObserver(() => {
+        pauseAllMedia();
+    });
+
+    mediaSuppressObserver.observe(document.body || document.documentElement, {
+        childList: true,
+        subtree: true
+    });
+}
+
+function stopMediaSuppression() {
+    if (mediaSuppressInterval) {
+        clearInterval(mediaSuppressInterval);
+        mediaSuppressInterval = null;
+    }
+    if (mediaSuppressObserver) {
+        mediaSuppressObserver.disconnect();
+        mediaSuppressObserver = null;
+    }
 }
 
 // =====================
@@ -218,6 +248,7 @@ function showBlockedOverlay(access) {
     if (overlayElement) return; // Already showing
 
     isBlocked = true;
+    startMediaSuppression();
 
     overlayElement = document.createElement('div');
     overlayElement.id = 'time-tracker-overlay';
@@ -291,6 +322,7 @@ function hideBlockedOverlay() {
         clearInterval(countdownInterval);
         countdownInterval = null;
     }
+    stopMediaSuppression();
     isBlocked = false;
 }
 
