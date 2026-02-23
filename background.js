@@ -51,18 +51,83 @@ const TAB_STALE_THRESHOLD_ACTIVITY = 10000;  // 10 seconds for activity reports
 
 
 // =====================
+// Dynamic Content Script Registration
+// =====================
+
+const CONTENT_SCRIPT_ID = 'time-tracker-content';
+
+function buildMatchPatterns(categories) {
+    const patterns = new Set();
+
+    for (const category of Object.values(categories)) {
+        if (!category.domains) continue;
+        for (const domain of category.domains) {
+            const clean = domain.toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/+$/, '');
+            if (!clean) continue;
+            patterns.add(`*://*.${clean}/*`);
+            patterns.add(`*://${clean}/*`);
+        }
+    }
+
+    return [...patterns];
+}
+
+async function registerDynamicContentScripts() {
+    const categories = await getCategories();
+    const matches = buildMatchPatterns(categories);
+
+    if (matches.length === 0) {
+        try {
+            await chrome.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+        } catch (e) { /* nothing to unregister */ }
+        return;
+    }
+
+    try {
+        await chrome.scripting.updateContentScripts([{
+            id: CONTENT_SCRIPT_ID,
+            matches,
+        }]);
+        console.log('[ContentScript] Updated dynamic registration with', matches.length, 'patterns');
+    } catch (e) {
+        try {
+            await chrome.scripting.registerContentScripts([{
+                id: CONTENT_SCRIPT_ID,
+                matches,
+                js: ['content.js'],
+                css: ['overlay.css'],
+                runAt: 'document_idle',
+                allFrames: true,
+                persistAcrossSessions: true
+            }]);
+            console.log('[ContentScript] Registered dynamic content scripts with', matches.length, 'patterns');
+        } catch (e2) {
+            console.error('[ContentScript] Failed to register:', e2);
+        }
+    }
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.categories) {
+        registerDynamicContentScripts();
+    }
+});
+
+// =====================
 // Initialization
 // =====================
 
 chrome.runtime.onInstalled.addListener(async () => {
     console.log('Advanced Time Tracker installed');
     await initializeStorage();
+    await registerDynamicContentScripts();
     await setupAlarms();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
     console.log('Advanced Time Tracker starting');
     await initializeStorage();
+    await registerDynamicContentScripts();
     await setupAlarms();
     await cleanupOldData();
     await checkRestPeriods();
@@ -580,6 +645,7 @@ async function updateBadge(categoryKey, status) {
 (async () => {
     try {
         await initializeStorage();
+        await registerDynamicContentScripts();
         console.log('Background service worker ready');
     } catch (error) {
         console.error('Failed to initialize storage:', error);
