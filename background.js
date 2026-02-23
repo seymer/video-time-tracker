@@ -654,13 +654,26 @@ async function updateBadge(categoryKey, status) {
     chrome.action.setBadgeText({ text: '' });
 }
 
-// Initialize on load
-(async () => {
-    try {
-        await initializeStorage();
-        await registerDynamicContentScripts();
-        console.log('Background service worker ready');
-    } catch (error) {
-        console.error('Failed to initialize storage:', error);
+// Initialize on load (retry on "No SW" – runtime may not be ready on first tick)
+const MAX_INIT_ATTEMPTS = 3;
+const INIT_RETRY_MS = 100;
+
+async function initWithRetry() {
+    for (let attempt = 1; attempt <= MAX_INIT_ATTEMPTS; attempt++) {
+        try {
+            await initializeStorage();
+            await registerDynamicContentScripts();
+            console.log('Background service worker ready');
+            return;
+        } catch (error) {
+            const isNoSw = String(error?.message || error).includes('No SW');
+            if (isNoSw && attempt < MAX_INIT_ATTEMPTS) {
+                await new Promise(r => setTimeout(r, INIT_RETRY_MS));
+                continue;
+            }
+            console.error('Failed to initialize storage:', error);
+        }
     }
-})();
+}
+
+initWithRetry();
