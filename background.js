@@ -83,26 +83,39 @@ async function registerDynamicContentScripts() {
         return;
     }
 
-    try {
-        await chrome.scripting.updateContentScripts([{
-            id: CONTENT_SCRIPT_ID,
-            matches,
-        }]);
-        console.log('[ContentScript] Updated dynamic registration with', matches.length, 'patterns');
-    } catch (e) {
+    const registered = await chrome.scripting.getRegisteredContentScripts?.({ ids: [CONTENT_SCRIPT_ID] }).catch(() => []);
+    const alreadyRegistered = Array.isArray(registered) && registered.some(s => s.id === CONTENT_SCRIPT_ID);
+
+    if (alreadyRegistered) {
         try {
-            await chrome.scripting.registerContentScripts([{
+            await chrome.scripting.updateContentScripts([{
                 id: CONTENT_SCRIPT_ID,
                 matches,
-                js: ['content.js'],
-                css: ['overlay.css'],
-                runAt: 'document_idle',
-                allFrames: true,
-                persistAcrossSessions: true
             }]);
-            console.log('[ContentScript] Registered dynamic content scripts with', matches.length, 'patterns');
-        } catch (e2) {
-            console.error('[ContentScript] Failed to register:', e2);
+            console.log('[ContentScript] Updated dynamic registration with', matches.length, 'patterns');
+        } catch (e) {
+            console.error('[ContentScript] Failed to update:', e);
+        }
+        return;
+    }
+
+    try {
+        await chrome.scripting.registerContentScripts([{
+            id: CONTENT_SCRIPT_ID,
+            matches,
+            js: ['content.js'],
+            css: ['overlay.css'],
+            runAt: 'document_idle',
+            allFrames: true,
+            persistAcrossSessions: true
+        }]);
+        console.log('[ContentScript] Registered dynamic content scripts with', matches.length, 'patterns');
+    } catch (e) {
+        if (e?.message?.includes('Duplicate script ID')) {
+            // Race: script was registered by another call. Treat as success; next run will update.
+            console.log('[ContentScript] Already registered (race); matches will sync on next run');
+        } else {
+            console.error('[ContentScript] Failed to register:', e);
         }
     }
 }
