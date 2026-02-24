@@ -1,8 +1,9 @@
 {
     "manifest_version": 3,
-    "name": "Advanced Time Tracker",
+    "name": "__MSG_extensionName__",
     "version": "1.0.2",
-    "description": "Master your screen time with effective usage tracking, smart session limits, and mandatory rest periods. Stop doomscrolling today!",
+    "description": "__MSG_extensionDescription__",
+"default_locale": "en",
     "permissions": [
         "storage",
         "alarms",

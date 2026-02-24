@@ -4,6 +4,43 @@
  */
 
 // =====================
+// i18n
+// =====================
+
+function i18n(key, ...subs) {
+    return chrome.i18n.getMessage(key, subs) || key;
+}
+
+/** Replace all __MSG_key__ in the document with chrome.i18n messages (Chrome doesn't do this for extension HTML) */
+function applyI18nToDocument() {
+    const msgRe = /__MSG_([A-Za-z0-9_]+)__/g;
+    function replaceInText(text) {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(msgRe, (_, key) => chrome.i18n.getMessage(key) || key);
+    }
+    function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const t = replaceInText(node.textContent);
+            if (t !== node.textContent) node.textContent = t;
+            return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || node.tagName === 'SCRIPT') return;
+        const attrs = ['title', 'placeholder'];
+        for (const attr of attrs) {
+            const val = node.getAttribute(attr);
+            if (val && val.includes('__MSG_')) {
+                node.setAttribute(attr, replaceInText(val));
+            }
+        }
+        for (const child of node.childNodes) walk(child);
+    }
+    walk(document.body);
+    if (document.title && document.title.includes('__MSG_')) {
+        document.title = replaceInText(document.title);
+    }
+}
+
+// =====================
 // State
 // =====================
 
@@ -18,6 +55,9 @@ let domainLimits = {};
 // =====================
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Replace __MSG_xxx__ in HTML with locale strings (Chrome doesn't do this for extension pages)
+    applyI18nToDocument();
+
     // Restore tab and period from URL hash FIRST (sync, before any await)
     const { tab, period } = parseHash();
     switchToTab(tab);
@@ -26,6 +66,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Show content now that correct tab is set
     document.body.classList.add('ready');
+
+    // i18n: footer version and placeholders
+    const manifest = chrome.runtime.getManifest();
+    const footerEl = document.getElementById('footerVersion');
+    if (footerEl) footerEl.textContent = i18n('footerVersion', manifest.version);
+    const domainsPlaceholder = document.getElementById('categoryDomains');
+    if (domainsPlaceholder) domainsPlaceholder.placeholder = i18n('placeholderDomains');
 
     await loadData();
     setupEventListeners();
@@ -171,7 +218,7 @@ function renderChart(stats, period) {
         chartContainer.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">📊</div>
-                <p>No data for this period</p>
+                <p>${i18n('emptyNoData')}</p>
             </div>
         `;
         labelsContainer.innerHTML = '';
@@ -202,7 +249,7 @@ function renderChart(stats, period) {
         let label;
 
         if (period === 'day') {
-            label = 'Today';
+            label = i18n('periodToday');
         } else if (period === 'week') {
             label = d.toLocaleDateString('en-US', { weekday: 'short' });
         } else {
@@ -225,7 +272,7 @@ function renderDomainBreakdown(stats) {
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">🌐</div>
-                <p>No website data recorded yet</p>
+                <p>${i18n('emptyNoWebsites')}</p>
             </div>
         `;
         return;
@@ -263,7 +310,7 @@ function renderCategoryBreakdown(stats) {
         container.innerHTML = `
             <div class="empty-state">
                 <div class="empty-icon">📁</div>
-                <p>No category data recorded yet</p>
+                <p>${i18n('emptyNoCategories')}</p>
             </div>
         `;
         return;
@@ -300,7 +347,7 @@ function renderUsageSummary(usage, activeState, pendingTime = {}) {
     const todayUsage = usage[today] || {};
 
     if (Object.keys(categories).length === 0) {
-        container.innerHTML = '<p style="color: rgba(255,255,255,0.5)">No categories configured.</p>';
+        container.innerHTML = `<p style="color: rgba(255,255,255,0.5)">${i18n('emptyNoCategoriesConfigured')}</p>`;
         return;
     }
 
@@ -328,14 +375,14 @@ function renderUsageSummary(usage, activeState, pendingTime = {}) {
             <div class="usage-item">
                 <div class="category-name">${category.name}</div>
                 <div class="time-used">${formatTime(totalTimeWithPending)}</div>
-                <div class="time-limit">of ${formatTime(category.dailyLimit)}</div>
+                <div class="time-limit">${i18n('ofLimit', formatTime(category.dailyLimit))}</div>
                 <div class="progress-bar">
                     <div class="progress-fill ${progressClass}" style="width: ${percentage}%"></div>
                 </div>
                 ${category.sessionCount ? `
                     <div class="sessions-info">
-                        ${sessionsUsed}/${category.sessionCount} sessions
-                        ${state.inRest ? ' (resting)' : ''}
+                        ${i18n('sessionsUsed', String(sessionsUsed), String(category.sessionCount))}
+                        ${state.inRest ? ` ${i18n('resting')}` : ''}
                     </div>
                 ` : ''}
             </div>
@@ -347,7 +394,7 @@ function renderCategories() {
     const container = document.getElementById('categoriesContainer');
 
     if (Object.keys(categories).length === 0) {
-        container.innerHTML = '<p style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">No categories configured. Click "Add Category" to get started.</p>';
+        container.innerHTML = `<p style="color: rgba(255,255,255,0.5); text-align: center; padding: 20px;">${i18n('emptyNoCategoriesHint')}</p>`;
         return;
     }
 
@@ -537,7 +584,7 @@ function openModal(categoryKey) {
     if (categoryKey && categories[categoryKey]) {
         const category = categories[categoryKey];
 
-        document.getElementById('modalTitle').textContent = 'Edit Category';
+        document.getElementById('modalTitle').textContent = i18n('editCategory');
         deleteBtn.classList.remove('hidden');
 
         document.getElementById('categoryName').value = category.name;
@@ -556,7 +603,7 @@ function openModal(categoryKey) {
             });
         }
     } else {
-        document.getElementById('modalTitle').textContent = 'Add Category';
+        document.getElementById('modalTitle').textContent = i18n('addNewCategory');
         deleteBtn.classList.add('hidden');
 
         // Set defaults

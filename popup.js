@@ -2,7 +2,36 @@
  * Popup Script - Quick status overview
  */
 
+function i18n(key, ...subs) {
+    return chrome.i18n.getMessage(key, subs) || key;
+}
+
+/** Replace all __MSG_key__ in the document with chrome.i18n messages */
+function applyI18nToDocument() {
+    const msgRe = /__MSG_([A-Za-z0-9_]+)__/g;
+    function replaceInText(text) {
+        if (!text || typeof text !== 'string') return text;
+        return text.replace(msgRe, (_, key) => chrome.i18n.getMessage(key) || key);
+    }
+    function walk(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const t = replaceInText(node.textContent);
+            if (t !== node.textContent) node.textContent = t;
+            return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE || node.tagName === 'SCRIPT') return;
+        for (const attr of ['title', 'placeholder']) {
+            const val = node.getAttribute(attr);
+            if (val && val.includes('__MSG_')) node.setAttribute(attr, replaceInText(val));
+        }
+        for (const child of node.childNodes) walk(child);
+    }
+    walk(document.body);
+    if (document.title && document.title.includes('__MSG_')) document.title = replaceInText(document.title);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+    applyI18nToDocument();
     await loadStatus();
 
     document.getElementById('openSettings').addEventListener('click', () => {
@@ -30,7 +59,7 @@ async function loadStatus() {
         renderCategories(categories, todayUsage, activeState, pendingTime);
     } catch (error) {
         console.error('Error loading status:', error);
-        document.getElementById('categoryList').innerHTML = '<p class="empty-state">Error loading data</p>';
+        document.getElementById('categoryList').innerHTML = `<p class="empty-state">${i18n('popupErrorLoading')}</p>`;
     }
 }
 
@@ -40,8 +69,8 @@ function renderCategories(categories, todayUsage, activeState, pendingTime = {})
     if (Object.keys(categories).length === 0) {
         container.innerHTML = `
             <div class="empty-state">
-                <p>No categories configured</p>
-                <button class="btn" onclick="chrome.runtime.openOptionsPage()">Configure Categories</button>
+                <p>${i18n('popupNoCategories')}</p>
+                <button class="btn" onclick="chrome.runtime.openOptionsPage()">${i18n('popupConfigureCategories')}</button>
             </div>
         `;
         return;
@@ -67,14 +96,14 @@ function renderCategories(categories, todayUsage, activeState, pendingTime = {})
         else if (percentage >= 75) progressClass = 'warning';
 
         let statusClass = '';
-        let statusText = 'Active';
+        let statusText = i18n('popupStatusActive');
 
         if (state.inRest) {
             statusClass = 'resting';
-            statusText = 'Resting';
+            statusText = i18n('popupStatusResting');
         } else if (percentage >= 100) {
             statusClass = 'blocked';
-            statusText = 'Limit Reached';
+            statusText = i18n('popupStatusLimitReached');
         }
 
         return `
@@ -84,13 +113,13 @@ function renderCategories(categories, todayUsage, activeState, pendingTime = {})
                     <span class="category-status ${statusClass}">${statusText}</span>
                 </div>
                 <div class="time-display">${formatTime(totalTimeWithPending)}</div>
-                <div class="time-limit">of ${formatTime(category.dailyLimit)} daily limit</div>
+                <div class="time-limit">${i18n('ofLimit', formatTime(category.dailyLimit))} daily limit</div>
                 <div class="progress-bar">
                     <div class="progress-fill ${progressClass}" style="width: ${percentage}%"></div>
                 </div>
                 ${category.sessionCount ? `
                     <div class="sessions-info">
-                        ${sessionsUsed} of ${category.sessionCount} sessions used
+                        ${i18n('popupSessionsUsed', String(sessionsUsed), String(category.sessionCount))}
                     </div>
                 ` : ''}
             </div>

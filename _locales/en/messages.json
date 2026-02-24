@@ -1,0 +1,382 @@
+{
+  "extensionName": {
+    "message": "Advanced Time Tracker",
+    "description": "Name of the extension"
+  },
+  "extensionDescription": {
+    "message": "Master your screen time with effective usage tracking, smart session limits, and mandatory rest periods. Stop doomscrolling today!",
+    "description": "Description for the Chrome Web Store"
+  },
+  "optionsTitle": {
+    "message": "Time Tracker - Dashboard",
+    "description": "Options page title"
+  },
+  "appName": {
+    "message": "Time Tracker",
+    "description": "Short app name used in headers"
+  },
+  "appSubtitle": {
+    "message": "Manage your screen time effectively",
+    "description": "Options page subtitle"
+  },
+  "tabStatistics": {
+    "message": "Statistics",
+    "description": "Statistics tab label"
+  },
+  "tabSettings": {
+    "message": "Settings",
+    "description": "Settings tab label"
+  },
+  "periodToday": {
+    "message": "Today",
+    "description": "Period filter"
+  },
+  "periodThisWeek": {
+    "message": "This Week",
+    "description": "Period filter"
+  },
+  "periodThisMonth": {
+    "message": "This Month",
+    "description": "Period filter"
+  },
+  "statTotalTime": {
+    "message": "Total Time",
+    "description": "Stats summary label"
+  },
+  "statSitesTracked": {
+    "message": "Sites Tracked",
+    "description": "Stats summary label"
+  },
+  "statDailyAverage": {
+    "message": "Daily Average",
+    "description": "Stats summary label"
+  },
+  "usageOverTime": {
+    "message": "Usage Over Time",
+    "description": "Chart section title"
+  },
+  "byWebsite": {
+    "message": "By Website",
+    "description": "Section title"
+  },
+  "byCategory": {
+    "message": "By Category",
+    "description": "Section title"
+  },
+  "todaysUsage": {
+    "message": "Today's Usage",
+    "description": "Section title"
+  },
+  "categories": {
+    "message": "Categories",
+    "description": "Section title"
+  },
+  "websiteLimits": {
+    "message": "Website Limits",
+    "description": "Section title"
+  },
+  "websiteLimitsDesc": {
+    "message": "Set individual time limits for specific websites (takes priority over category limits)",
+    "description": "Website limits section description"
+  },
+  "data": {
+    "message": "Data",
+    "description": "Section title"
+  },
+  "addCategory": {
+    "message": "+ Add Category",
+    "description": "Button label"
+  },
+  "addLimit": {
+    "message": "+ Add Limit",
+    "description": "Button label"
+  },
+  "exportData": {
+    "message": "Export Data",
+    "description": "Button label"
+  },
+  "resetToday": {
+    "message": "Reset Today",
+    "description": "Button label"
+  },
+  "clearAllData": {
+    "message": "Clear All Data",
+    "description": "Button label"
+  },
+  "editCategory": {
+    "message": "Edit Category",
+    "description": "Modal title"
+  },
+  "addNewCategory": {
+    "message": "Add Category",
+    "description": "Modal title when adding"
+  },
+  "labelName": {
+    "message": "Name",
+    "description": "Form label"
+  },
+  "labelDetectionType": {
+    "message": "Detection Type",
+    "description": "Form label"
+  },
+  "typeVideo": {
+    "message": "Video (tracks playback time)",
+    "description": "Category type option"
+  },
+  "typeReading": {
+    "message": "Reading (tracks visible + active)",
+    "description": "Category type option"
+  },
+  "typeSocial": {
+    "message": "Social (tracks scroll + interaction)",
+    "description": "Category type option"
+  },
+  "typeAudio": {
+    "message": "Audio (tracks audio playback)",
+    "description": "Category type option"
+  },
+  "labelDomains": {
+    "message": "Domains (one per line)",
+    "description": "Form label"
+  },
+  "placeholderDomains": {
+    "message": "youtube.com\nvimeo.com\nnetflix.com",
+    "description": "Textarea placeholder"
+  },
+  "labelDailyLimit": {
+    "message": "Daily Limit (hours)",
+    "description": "Form label"
+  },
+  "labelSessionDuration": {
+    "message": "Session Duration (min)",
+    "description": "Form label"
+  },
+  "labelSessionsPerDay": {
+    "message": "Sessions per Day",
+    "description": "Form label"
+  },
+  "labelRestBetween": {
+    "message": "Rest Between (min)",
+    "description": "Form label"
+  },
+  "labelIdleTimeout": {
+    "message": "Idle Timeout (seconds)",
+    "description": "Form label"
+  },
+  "labelIdleTimeoutHint": {
+    "message": "For reading/social: stop tracking after this idle time",
+    "description": "Form hint"
+  },
+  "labelForbiddenPeriods": {
+    "message": "Forbidden Time Periods",
+    "description": "Form label"
+  },
+  "addPeriod": {
+    "message": "+ Add Period",
+    "description": "Button label"
+  },
+  "enableTracking": {
+    "message": "Enable tracking for this category",
+    "description": "Checkbox label"
+  },
+  "delete": {
+    "message": "Delete",
+    "description": "Button label"
+  },
+  "cancel": {
+    "message": "Cancel",
+    "description": "Button label"
+  },
+  "save": {
+    "message": "Save",
+    "description": "Button label"
+  },
+  "placeholderDomain": {
+    "message": "e.g., youtube.com",
+    "description": "Input placeholder"
+  },
+  "placeholderHours": {
+    "message": "Hours",
+    "description": "Input placeholder"
+  },
+  "footerVersion": {
+    "message": "Advanced Time Tracker v$version$",
+    "description": "Footer version text",
+    "placeholders": {
+      "version": { "content": "$1" }
+    }
+  },
+  "emptyNoData": {
+    "message": "No data for this period",
+    "description": "Empty state"
+  },
+  "emptyNoWebsites": {
+    "message": "No website data recorded yet",
+    "description": "Empty state"
+  },
+  "emptyNoCategories": {
+    "message": "No category data recorded yet",
+    "description": "Empty state"
+  },
+  "emptyNoCategoriesConfigured": {
+    "message": "No categories configured.",
+    "description": "Empty state"
+  },
+  "emptyNoCategoriesHint": {
+    "message": "No categories configured. Click \"Add Category\" to get started.",
+    "description": "Empty state hint"
+  },
+  "ofLimit": {
+    "message": "of $limit$",
+    "description": "Time used of limit",
+    "placeholders": {
+      "limit": { "content": "$1" }
+    }
+  },
+  "sessionsUsed": {
+    "message": "$used$/$total$ sessions",
+    "description": "Sessions used count",
+    "placeholders": {
+      "used": { "content": "$1" },
+      "total": { "content": "$2" }
+    }
+  },
+  "resting": {
+    "message": "(resting)",
+    "description": "Status suffix"
+  },
+  "dashboardAndSettings": {
+    "message": "Dashboard & Settings",
+    "description": "Popup footer link"
+  },
+  "popupNoCategories": {
+    "message": "No categories configured",
+    "description": "Popup empty state"
+  },
+  "popupConfigureCategories": {
+    "message": "Configure Categories",
+    "description": "Popup button"
+  },
+  "popupErrorLoading": {
+    "message": "Error loading data",
+    "description": "Popup error"
+  },
+  "popupStatusActive": {
+    "message": "Active",
+    "description": "Category status"
+  },
+  "popupStatusResting": {
+    "message": "Resting",
+    "description": "Category status"
+  },
+  "popupStatusLimitReached": {
+    "message": "Limit Reached",
+    "description": "Category status"
+  },
+  "popupSessionsUsed": {
+    "message": "$used$ of $total$ sessions used",
+    "description": "Sessions in popup",
+    "placeholders": {
+      "used": { "content": "$1" },
+      "total": { "content": "$2" }
+    }
+  },
+  "overlayAccessBlocked": {
+    "message": "Access Blocked",
+    "description": "Overlay title"
+  },
+  "overlayTimeLimitReached": {
+    "message": "Time limit reached",
+    "description": "Overlay default message"
+  },
+  "overlayBlockedPeriod": {
+    "message": "Blocked Time Period",
+    "description": "Overlay title"
+  },
+  "overlayBlockedPeriodMsg": {
+    "message": "This site is blocked during this time.",
+    "description": "Overlay message"
+  },
+  "overlayAvailableAt": {
+    "message": "Available at $time$",
+    "description": "Overlay countdown",
+    "placeholders": {
+      "time": { "content": "$1" }
+    }
+  },
+  "overlayTakeBreak": {
+    "message": "Take a Break",
+    "description": "Overlay title"
+  },
+  "overlayRestPeriodMsg": {
+    "message": "Mandatory rest period is active.",
+    "description": "Overlay message"
+  },
+  "overlayRemaining": {
+    "message": "$time$ remaining",
+    "description": "Countdown text",
+    "placeholders": {
+      "time": { "content": "$1" }
+    }
+  },
+  "overlaySessionComplete": {
+    "message": "Session Complete",
+    "description": "Overlay title"
+  },
+  "overlaySessionCompleteMsg": {
+    "message": "Your session time limit has been reached.",
+    "description": "Overlay message"
+  },
+  "overlayDailyLimitReached": {
+    "message": "Daily Limit Reached",
+    "description": "Overlay title"
+  },
+  "overlayDailyLimitMsg": {
+    "message": "You've used all your time for today.",
+    "description": "Overlay message"
+  },
+  "overlayResetsMidnight": {
+    "message": "Resets at midnight",
+    "description": "Overlay info"
+  },
+  "overlayAllSessionsUsed": {
+    "message": "All Sessions Used",
+    "description": "Overlay title"
+  },
+  "overlayAllSessionsMsg": {
+    "message": "You've used all $count$ sessions today.",
+    "description": "Overlay message",
+    "placeholders": {
+      "count": { "content": "$1" }
+    }
+  },
+  "overlayWebsiteLimitReached": {
+    "message": "Website Limit Reached",
+    "description": "Overlay title"
+  },
+  "overlayDomainLimitMsg": {
+    "message": "Daily limit for $domain$ reached",
+    "description": "Overlay message",
+    "placeholders": {
+      "domain": { "content": "$1" }
+    }
+  },
+  "overlayToday": {
+    "message": "Today: $time$",
+    "description": "Overlay stats",
+    "placeholders": {
+      "time": { "content": "$1" }
+    }
+  },
+  "overlayLimit": {
+    "message": "Limit: $time$",
+    "description": "Overlay stats",
+    "placeholders": {
+      "time": { "content": "$1" }
+    }
+  },
+  "settingsTitle": {
+    "message": "Settings",
+    "description": "Settings button title"
+  }
+}

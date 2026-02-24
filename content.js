@@ -4,6 +4,14 @@
  */
 
 // =====================
+// i18n
+// =====================
+
+function i18n(key, ...subs) {
+    return chrome.i18n.getMessage(key, subs) || key;
+}
+
+// =====================
 // State
 // =====================
 
@@ -82,7 +90,7 @@ async function initialize() {
         showBlockedOverlay({
             allowed: false,
             reason: 'domain_limit',
-            reasonText: `Daily limit for ${currentDomain} reached`,
+            reasonText: i18n('overlayDomainLimitMsg', currentDomain),
             domain: currentDomain,
             limit: domainCheck.limit,
             used: domainCheck.used
@@ -254,42 +262,42 @@ function showBlockedOverlay(access) {
     overlayElement.id = 'time-tracker-overlay';
     overlayElement.className = 'time-tracker-overlay';
 
-    let title = 'Access Blocked';
-    let message = access.reasonText || 'Time limit reached';
+    let title = i18n('overlayAccessBlocked');
+    let message = access.reasonText || i18n('overlayTimeLimitReached');
     let countdown = '';
 
     if (access.reason === 'forbidden_period') {
-        title = '🚫 Blocked Time Period';
-        message = 'This site is blocked during this time.';
+        title = '🚫 ' + i18n('overlayBlockedPeriod');
+        message = i18n('overlayBlockedPeriodMsg');
         if (access.nextAvailable) {
             const nextTime = new Date(access.nextAvailable);
-            countdown = `Available at ${nextTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+            countdown = i18n('overlayAvailableAt', nextTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         }
     } else if (access.reason === 'rest_period') {
-        title = '☕ Take a Break';
-        message = 'Mandatory rest period is active.';
+        title = '☕ ' + i18n('overlayTakeBreak');
+        message = i18n('overlayRestPeriodMsg');
         if (access.restRemaining) {
-            countdown = `<span class="countdown" data-end="${Date.now() + access.restRemaining * 1000}">${access.restRemainingFormatted} remaining</span>`;
+            countdown = `<span class="countdown" data-end="${Date.now() + access.restRemaining * 1000}">${i18n('overlayRemaining', access.restRemainingFormatted)}</span>`;
         }
     } else if (access.reason === 'session_limit_reached') {
-        title = '⏰ Session Complete';
-        message = 'Your session time limit has been reached.';
+        title = '⏰ ' + i18n('overlaySessionComplete');
+        message = i18n('overlaySessionCompleteMsg');
         const restDuration = access.restDuration || currentCategory?.restDuration;
         if (restDuration) {
-            countdown = `<span class="countdown" data-end="${Date.now() + restDuration * 1000}">${formatSeconds(restDuration)} remaining</span>`;
+            countdown = `<span class="countdown" data-end="${Date.now() + restDuration * 1000}">${i18n('overlayRemaining', formatSeconds(restDuration))}</span>`;
         }
     } else if (access.reason === 'daily_limit') {
-        title = '📅 Daily Limit Reached';
-        message = 'You\'ve used all your time for today.';
-        countdown = 'Resets at midnight';
+        title = '📅 ' + i18n('overlayDailyLimitReached');
+        message = i18n('overlayDailyLimitMsg');
+        countdown = i18n('overlayResetsMidnight');
     } else if (access.reason === 'sessions_exhausted') {
-        title = '🎯 All Sessions Used';
-        message = `You've used all ${access.sessionsTotal} sessions today.`;
-        countdown = 'Resets at midnight';
+        title = '🎯 ' + i18n('overlayAllSessionsUsed');
+        message = i18n('overlayAllSessionsMsg', String(access.sessionsTotal || 0));
+        countdown = i18n('overlayResetsMidnight');
     } else if (access.reason === 'domain_limit') {
-        title = '🌐 Website Limit Reached';
-        message = access.reasonText || `Daily limit for ${access.domain || 'this site'} reached`;
-        countdown = 'Resets at midnight';
+        title = '🌐 ' + i18n('overlayWebsiteLimitReached');
+        message = access.reasonText || i18n('overlayDomainLimitMsg', access.domain || 'this site');
+        countdown = i18n('overlayResetsMidnight');
     }
 
     overlayElement.innerHTML = `
@@ -299,8 +307,8 @@ function showBlockedOverlay(access) {
             <p class="overlay-message">${message}</p>
             ${countdown ? `<p class="overlay-countdown">${countdown}</p>` : ''}
             <div class="overlay-stats">
-                ${(access.totalTime || access.used) ? `<span>Today: ${formatSeconds(access.totalTime || access.used)}</span>` : ''}
-                ${(access.dailyLimit || access.limit) ? `<span>Limit: ${formatSeconds(access.dailyLimit || access.limit)}</span>` : ''}
+                ${(access.totalTime || access.used) ? `<span>${i18n('overlayToday', formatSeconds(access.totalTime || access.used))}</span>` : ''}
+                ${(access.dailyLimit || access.limit) ? `<span>${i18n('overlayLimit', formatSeconds(access.dailyLimit || access.limit))}</span>` : ''}
             </div>
         </div>
     `;
@@ -366,7 +374,7 @@ function startCountdownTimer(endTimestamp) {
             return;
         }
 
-        countdownEl.textContent = `${formatSeconds(remaining)} remaining`;
+        countdownEl.textContent = i18n('overlayRemaining', formatSeconds(remaining));
     }
 
     tick(); // show immediately
@@ -541,7 +549,7 @@ async function handleNavigation() {
         showBlockedOverlay({
             allowed: false,
             reason: 'domain_limit',
-            reasonText: `Daily limit for ${currentDomain} reached`,
+            reasonText: i18n('overlayDomainLimitMsg', currentDomain),
             domain: currentDomain,
             limit: domainCheck.limit,
             used: domainCheck.used
