@@ -307,13 +307,13 @@ function showBlockedOverlay(access) {
 
     document.body.appendChild(overlayElement);
 
-    // Start countdown timer if applicable
+    // Start countdown timer if applicable (use end timestamp so it stays correct when tab is in background)
     if (access.restRemaining) {
-        startCountdownTimer(access.restRemaining);
+        startCountdownTimer(Date.now() + access.restRemaining * 1000);
     } else if (access.reason === 'session_limit_reached') {
         const restDuration = access.restDuration || currentCategory?.restDuration;
         if (restDuration) {
-            startCountdownTimer(restDuration);
+            startCountdownTimer(Date.now() + restDuration * 1000);
         }
     }
 }
@@ -343,31 +343,34 @@ function getIconForReason(reason) {
     return icons[reason] || '⏳';
 }
 
-function startCountdownTimer(seconds) {
+/**
+ * Runs countdown until endTimestamp (ms). Uses end time so the timer stays correct
+ * when the tab is in the background (setInterval is throttled, but we recalc from real time).
+ */
+function startCountdownTimer(endTimestamp) {
     const countdownEl = overlayElement?.querySelector('.countdown');
     if (!countdownEl) return;
 
-    let remaining = seconds;
-
-    // Clear any existing interval
     if (countdownInterval) {
         clearInterval(countdownInterval);
     }
 
-    countdownInterval = setInterval(() => {
-        remaining--;
+    function tick() {
+        const remaining = Math.ceil((endTimestamp - Date.now()) / 1000);
 
         if (remaining <= 0) {
             clearInterval(countdownInterval);
             countdownInterval = null;
             hideBlockedOverlay();
-            // Re-initialize to check if we can now access
             initialize();
             return;
         }
 
         countdownEl.textContent = `${formatSeconds(remaining)} remaining`;
-    }, 1000);
+    }
+
+    tick(); // show immediately
+    countdownInterval = setInterval(tick, 1000);
 }
 
 // =====================
