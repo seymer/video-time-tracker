@@ -8,6 +8,7 @@ import {
     getTodayKey,
     getCategories,
     getCategoryForDomain,
+    getCategoryUsage,
     performDailyReset,
     cleanupOldData,
     getCategoryActiveState,
@@ -404,12 +405,25 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
                     used: domainCheck.used
                 };
             }
-
-            // Record domain-level time
-            await addDomainTime(categoryKey, domain, seconds);
         }
 
-        const result = await addEffectiveTime(categoryKey, seconds);
+        // Cap time at category daily limit so we never exceed it (e.g. block at 1h 30m not 1h 33m)
+        const categories = await getCategories();
+        const category = categories[categoryKey];
+        let secondsToAdd = seconds;
+        if (category?.dailyLimit != null && category.dailyLimit > 0) {
+            const usage = await getCategoryUsage(categoryKey);
+            const headroom = Math.max(0, category.dailyLimit - usage.totalTime);
+            if (seconds > headroom) {
+                secondsToAdd = headroom;
+            }
+        }
+
+        if (domain) {
+            await addDomainTime(categoryKey, domain, secondsToAdd);
+        }
+
+        const result = await addEffectiveTime(categoryKey, secondsToAdd);
 
         // If limit was reached, broadcast to all tabs with this category
         if (!result.allowed) {

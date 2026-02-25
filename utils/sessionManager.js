@@ -188,7 +188,8 @@ export async function endSession(categoryKey, triggerRest = false) {
 }
 
 /**
- * Add effective time to a category and check limits
+ * Add effective time to a category and check limits.
+ * Caps the add at the daily limit so we never exceed it (avoids e.g. 1h 33m when limit is 1h 30m).
  */
 export async function addEffectiveTime(categoryKey, seconds) {
     const categories = await getCategories();
@@ -198,13 +199,23 @@ export async function addEffectiveTime(categoryKey, seconds) {
         return { allowed: true };
     }
 
-    // Add the time to daily total
-    const usage = await addCategoryTime(categoryKey, seconds);
+    // Get current usage BEFORE adding so we can cap and never exceed the daily limit
+    const currentUsage = await getCategoryUsage(categoryKey);
+    let secondsToAdd = seconds;
+    if (category.dailyLimit != null && category.dailyLimit > 0) {
+        const headroom = Math.max(0, category.dailyLimit - currentUsage.totalTime);
+        if (seconds > headroom) {
+            secondsToAdd = headroom;
+        }
+    }
+
+    // Add only the capped time to daily total
+    const usage = await addCategoryTime(categoryKey, secondsToAdd);
     let activeState = await getCategoryActiveState(categoryKey);
 
-    // Also track effective time within the current session
+    // Also track effective time within the current session (use capped value so session time stays accurate)
     if (activeState.inSession) {
-        const newSessionTime = (activeState.sessionEffectiveTime || 0) + seconds;
+        const newSessionTime = (activeState.sessionEffectiveTime || 0) + secondsToAdd;
         await updateCategoryActiveState(categoryKey, {
             sessionEffectiveTime: newSessionTime
         });
@@ -231,7 +242,7 @@ export async function addEffectiveTime(categoryKey, seconds) {
         }
     }
 
-    // Check if daily limit exceeded
+    // Check if daily limit exceeded (we cap adds so this is exactly at limit when we capped)
     if (category.dailyLimit && usage.totalTime >= category.dailyLimit) {
         await endSession(categoryKey, false);
 
@@ -239,7 +250,9 @@ export async function addEffectiveTime(categoryKey, seconds) {
             allowed: false,
             reason: 'daily_limit_reached',
             reasonText: 'Daily time limit reached',
-            sessionEnded: true
+            sessionEnded: true,
+            totalTime: usage.totalTime,
+            dailyLimit: category.dailyLimit
         };
     }
 
@@ -248,7 +261,7 @@ export async function addEffectiveTime(categoryKey, seconds) {
     return {
         allowed: true,
         ...access,
-        timeAdded: seconds,
+        timeAdded: secondsToAdd,
         newTotal: usage.totalTime,
         sessionEffectiveTime: activeState.sessionEffectiveTime || 0
     };
