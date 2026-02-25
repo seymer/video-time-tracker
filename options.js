@@ -321,6 +321,7 @@ function renderCategoryBreakdown(stats) {
     container.innerHTML = sortedCategories.map(([key, time]) => {
         const category = categories[key] || { name: key };
         const percentage = (time / maxTime) * 100;
+        const limitText = category.dailyLimit ? ` ${i18n('statsCategoryLimit', formatTime(category.dailyLimit))}` : '';
 
         return `
             <div class="domain-item">
@@ -331,7 +332,7 @@ function renderCategoryBreakdown(stats) {
                 <div class="domain-bar">
                     <div class="domain-bar-fill" style="width: ${percentage}%"></div>
                 </div>
-                <span class="domain-time">${formatTime(time)}</span>
+                <span class="domain-time">${formatTime(time)}${limitText}</span>
             </div>
         `;
     }).join('');

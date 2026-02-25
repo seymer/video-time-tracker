@@ -368,6 +368,11 @@
       "time": { "content": "$1" }
     }
   },
+  "statsCategoryLimit": {
+    "message": "/ $time$ limit",
+    "description": "Stats By Category: used / limit",
+    "placeholders": { "time": { "content": "$1" } }
+  },
   "overlayLimit": {
     "message": "Limit: $time$",
     "description": "Overlay stats",

@@ -307,8 +307,8 @@ function showBlockedOverlay(access) {
             <p class="overlay-message">${message}</p>
             ${countdown ? `<p class="overlay-countdown">${countdown}</p>` : ''}
             <div class="overlay-stats">
-                ${(access.totalTime || access.used) ? `<span>${i18n('overlayToday', formatSeconds(access.totalTime || access.used))}</span>` : ''}
-                ${(access.dailyLimit || access.limit) ? `<span>${i18n('overlayLimit', formatSeconds(access.dailyLimit || access.limit))}</span>` : ''}
+                ${(access.totalTime != null || access.used != null) ? `<span>${i18n('overlayToday', formatSeconds(access.totalTime ?? access.used ?? 0))}</span>` : ''}
+                ${(access.dailyLimit != null || access.limit != null) ? `<span>${i18n('overlayLimit', formatSeconds(access.dailyLimit ?? access.limit ?? 0))}</span>` : ''}
             </div>
         </div>
     `;

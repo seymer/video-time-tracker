@@ -84,6 +84,7 @@
   "overlayWebsiteLimitReached": { "message": "サイト制限に達しました", "description": "Overlay title" },
   "overlayDomainLimitMsg": { "message": "$domain$ の本日制限に達しました", "description": "Overlay message", "placeholders": { "domain": { "content": "$1" } } },
   "overlayToday": { "message": "今日：$time$", "description": "Overlay stats", "placeholders": { "time": { "content": "$1" } } },
+  "statsCategoryLimit": { "message": "/ $time$ 制限", "description": "Stats By Category", "placeholders": { "time": { "content": "$1" } } },
   "overlayLimit": { "message": "制限：$time$", "description": "Overlay stats", "placeholders": { "time": { "content": "$1" } } },
   "settingsTitle": { "message": "設定", "description": "Settings button title" }
 }

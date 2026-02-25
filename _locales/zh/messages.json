@@ -84,6 +84,7 @@
   "overlayWebsiteLimitReached": { "message": "网站限制已达成", "description": "Overlay title" },
   "overlayDomainLimitMsg": { "message": "今日 $domain$ 的时长已达上限", "description": "Overlay message", "placeholders": { "domain": { "content": "$1" } } },
   "overlayToday": { "message": "今日：$time$", "description": "Overlay stats", "placeholders": { "time": { "content": "$1" } } },
+  "statsCategoryLimit": { "message": "/ $time$ 限制", "description": "Stats By Category", "placeholders": { "time": { "content": "$1" } } },
   "overlayLimit": { "message": "限制：$time$", "description": "Overlay stats", "placeholders": { "time": { "content": "$1" } } },
   "settingsTitle": { "message": "设置", "description": "Settings button title" }
 }
