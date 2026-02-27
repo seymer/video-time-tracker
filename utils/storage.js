@@ -19,7 +19,7 @@ const DEFAULT_CATEGORIES = {
     video: {
         name: 'Video',
         type: 'video',
-        domains: ['youtube.com', 'vimeo.com', 'netflix.com', 'twitch.tv', 'tiktok.com'],
+        domains: ['youtube.com', 'bilibili.com', 'vimeo.com', 'netflix.com', 'twitch.tv', 'tiktok.com', 'youtubekids.com'],
         dailyLimit: 7200,        // 2 hours
         sessionDuration: 1800,   // 30 minutes
         sessionCount: 4,         // 4 sessions max
@@ -30,7 +30,7 @@ const DEFAULT_CATEGORIES = {
     reading: {
         name: 'Reading',
         type: 'reading',
-        domains: ['reddit.com', 'wikipedia.org', 'medium.com'],
+        domains: ['reddit.com', 'wikipedia.org', 'medium.com', 'jianshu.com'],
         idleTimeout: 30,         // 30 seconds idle = stop
         dailyLimit: 3600,        // 1 hour
         sessionDuration: 1200,   // 20 minutes
@@ -42,12 +42,12 @@ const DEFAULT_CATEGORIES = {
     social: {
         name: 'Social Media',
         type: 'social',
-        domains: ['twitter.com', 'x.com', 'facebook.com', 'instagram.com'],
+        domains: ['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'weibo.com'],
         idleTimeout: 30,
-        dailyLimit: 3600,
-        sessionDuration: 900,    // 15 minutes
-        sessionCount: 4,
-        restDuration: 600,
+        dailyLimit: 7200,        // 2 hours
+        sessionDuration: 1800,    // 30 minutes
+        sessionCount: 4,         // 4 sessions max
+        restDuration: 600,       // 10 minutes rest
         forbiddenPeriods: [],
         enabled: true
     }
