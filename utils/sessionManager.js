@@ -199,19 +199,27 @@ export async function addEffectiveTime(categoryKey, seconds) {
         return { allowed: true };
     }
 
-    // Get current usage BEFORE adding so we can cap and never exceed the daily limit
+    // Get current usage and state BEFORE adding so we can cap at both daily and session limits
     const currentUsage = await getCategoryUsage(categoryKey);
+    let activeState = await getCategoryActiveState(categoryKey);
+
     let secondsToAdd = seconds;
     if (category.dailyLimit != null && category.dailyLimit > 0) {
-        const headroom = Math.max(0, category.dailyLimit - currentUsage.totalTime);
-        if (seconds > headroom) {
-            secondsToAdd = headroom;
+        const dailyHeadroom = Math.max(0, category.dailyLimit - currentUsage.totalTime);
+        if (secondsToAdd > dailyHeadroom) {
+            secondsToAdd = dailyHeadroom;
+        }
+    }
+    // Cap at session duration so access is cut off exactly when session time is reached (e.g. 15m, not 17m)
+    if (category.sessionDuration != null && category.sessionDuration > 0 && activeState.inSession) {
+        const sessionEffectiveTime = activeState.sessionEffectiveTime || 0;
+        const sessionHeadroom = Math.max(0, category.sessionDuration - sessionEffectiveTime);
+        if (secondsToAdd > sessionHeadroom) {
+            secondsToAdd = sessionHeadroom;
         }
     }
 
-    // Add only the capped time to daily total
     const usage = await addCategoryTime(categoryKey, secondsToAdd);
-    let activeState = await getCategoryActiveState(categoryKey);
 
     // Also track effective time within the current session (use capped value so session time stays accurate)
     if (activeState.inSession) {

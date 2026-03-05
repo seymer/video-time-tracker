@@ -407,16 +407,21 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
             }
         }
 
-        // Cap time at category daily limit so we never exceed it (e.g. block at 1h 30m not 1h 33m)
+        // Cap time at daily limit and session duration so access is cut off immediately when limit is reached
         const categories = await getCategories();
         const category = categories[categoryKey];
         let secondsToAdd = seconds;
+        const usage = await getCategoryUsage(categoryKey);
+        const activeState = await getCategoryActiveState(categoryKey);
+
         if (category?.dailyLimit != null && category.dailyLimit > 0) {
-            const usage = await getCategoryUsage(categoryKey);
-            const headroom = Math.max(0, category.dailyLimit - usage.totalTime);
-            if (seconds > headroom) {
-                secondsToAdd = headroom;
-            }
+            const dailyHeadroom = Math.max(0, category.dailyLimit - usage.totalTime);
+            if (secondsToAdd > dailyHeadroom) secondsToAdd = dailyHeadroom;
+        }
+        if (category?.sessionDuration != null && category.sessionDuration > 0 && activeState.inSession) {
+            const sessionEffective = activeState.sessionEffectiveTime || 0;
+            const sessionHeadroom = Math.max(0, category.sessionDuration - sessionEffective);
+            if (secondsToAdd > sessionHeadroom) secondsToAdd = sessionHeadroom;
         }
 
         if (domain) {
