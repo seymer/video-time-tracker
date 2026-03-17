@@ -196,7 +196,7 @@ export async function addEffectiveTime(categoryKey, seconds) {
     const category = categories[categoryKey];
 
     if (!category || !category.enabled) {
-        return { allowed: true };
+        return { allowed: true, timeAdded: seconds };
     }
 
     // Get current usage and state BEFORE adding so we can cap at both daily and session limits
@@ -245,7 +245,8 @@ export async function addEffectiveTime(categoryKey, seconds) {
                 sessionEnded: true,
                 restStarted: true,
                 restDuration: category.restDuration,
-                sessionEffectiveTime
+                sessionEffectiveTime,
+                timeAdded: secondsToAdd
             };
         }
     }
@@ -260,18 +261,31 @@ export async function addEffectiveTime(categoryKey, seconds) {
             reasonText: 'Daily time limit reached',
             sessionEnded: true,
             totalTime: usage.totalTime,
-            dailyLimit: category.dailyLimit
+            dailyLimit: category.dailyLimit,
+            timeAdded: secondsToAdd
         };
     }
 
-    // Still within limits
-    const access = await canAccessCategory(categoryKey);
+    // Still within limits — compute remaining values from data we already have
+    const dailyRemaining = (category.dailyLimit != null && category.dailyLimit > 0)
+        ? Math.max(0, category.dailyLimit - usage.totalTime)
+        : null;
+
+    let sessionRemaining = null;
+    if (category.sessionDuration && activeState.inSession) {
+        sessionRemaining = Math.max(0, category.sessionDuration - (activeState.sessionEffectiveTime || 0));
+    }
+
     return {
         allowed: true,
-        ...access,
+        hasLimits: true,
+        inSession: activeState.inSession,
+        sessionRemaining,
+        dailyRemaining,
         timeAdded: secondsToAdd,
         newTotal: usage.totalTime,
-        sessionEffectiveTime: activeState.sessionEffectiveTime || 0
+        sessionEffectiveTime: activeState.sessionEffectiveTime || 0,
+        isWarning: sessionRemaining !== null && sessionRemaining <= 60
     };
 }
 

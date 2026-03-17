@@ -8,11 +8,8 @@ import {
     getTodayKey,
     getCategories,
     getCategoryForDomain,
-    getCategoryUsage,
     performDailyReset,
     cleanupOldData,
-    getCategoryActiveState,
-    updateCategoryActiveState,
     formatTime,
     matchDomain,
     addDomainTime,
@@ -23,7 +20,8 @@ import {
     getWeekStats,
     getMonthStats,
     getPendingTimeUpdates,
-    flushPendingTimeUpdates
+    flushPendingTimeUpdates,
+    invalidateCategoriesCache
 } from './utils/storage.js';
 
 
@@ -123,6 +121,7 @@ async function registerDynamicContentScripts() {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === 'local' && changes.categories) {
+        invalidateCategoriesCache();
         registerDynamicContentScripts();
     }
 });
@@ -245,26 +244,34 @@ async function handleCheckRestPeriods() {
 async function broadcastForbiddenPeriodStatus() {
     const categories = await getCategories();
 
+    // Collect forbidden categories first, then query tabs once
+    const forbiddenCategories = [];
     for (const [categoryKey, category] of Object.entries(categories)) {
         const access = await canAccessCategory(categoryKey);
-
         if (!access.allowed && access.reason === 'forbidden_period') {
-            // Notify tabs with this category's domains
-            const tabs = await chrome.tabs.query({});
-            for (const tab of tabs) {
-                if (!tab.url) continue;
+            forbiddenCategories.push({ categoryKey, category, access });
+        }
+    }
 
+    if (forbiddenCategories.length === 0) return;
+
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+        if (!tab.url) continue;
+
+        let domain;
+        try {
+            domain = new URL(tab.url).hostname.replace(/^www\./, '');
+        } catch (e) { continue; }
+
+        for (const { categoryKey, category, access } of forbiddenCategories) {
+            if (category.domains.some(d => matchDomain(domain, d))) {
                 try {
-                    const url = new URL(tab.url);
-                    const domain = url.hostname.replace(/^www\./, '');
-
-                    if (category.domains.some(d => matchDomain(domain, d))) {
-                        await chrome.tabs.sendMessage(tab.id, {
-                            type: 'FORBIDDEN_PERIOD_ACTIVE',
-                            category: categoryKey,
-                            ...access
-                        });
-                    }
+                    await chrome.tabs.sendMessage(tab.id, {
+                        type: 'FORBIDDEN_PERIOD_ACTIVE',
+                        category: categoryKey,
+                        ...access
+                    });
                 } catch (e) {
                     // Tab might not have content script
                 }
@@ -407,28 +414,13 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
             }
         }
 
-        // Cap time at daily limit and session duration so access is cut off immediately when limit is reached
-        const categories = await getCategories();
-        const category = categories[categoryKey];
-        let secondsToAdd = seconds;
-        const usage = await getCategoryUsage(categoryKey);
-        const activeState = await getCategoryActiveState(categoryKey);
+        // addEffectiveTime already caps at daily + session limits, so no need to duplicate here
+        const result = await addEffectiveTime(categoryKey, seconds);
+        const secondsToAdd = result.timeAdded ?? seconds;
 
-        if (category?.dailyLimit != null && category.dailyLimit > 0) {
-            const dailyHeadroom = Math.max(0, category.dailyLimit - usage.totalTime);
-            if (secondsToAdd > dailyHeadroom) secondsToAdd = dailyHeadroom;
-        }
-        if (category?.sessionDuration != null && category.sessionDuration > 0 && activeState.inSession) {
-            const sessionEffective = activeState.sessionEffectiveTime || 0;
-            const sessionHeadroom = Math.max(0, category.sessionDuration - sessionEffective);
-            if (secondsToAdd > sessionHeadroom) secondsToAdd = sessionHeadroom;
-        }
-
-        if (domain) {
+        if (domain && secondsToAdd > 0) {
             await addDomainTime(categoryKey, domain, secondsToAdd);
         }
-
-        const result = await addEffectiveTime(categoryKey, secondsToAdd);
 
         // If limit was reached, broadcast to all tabs with this category
         if (!result.allowed) {

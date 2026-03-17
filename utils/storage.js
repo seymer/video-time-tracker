@@ -72,7 +72,10 @@ const DATA_RETENTION_DAYS = 31;
 const storageCache = {
     usage: null,
     activeState: null,
+    activeStateTimestamp: 0,
     categories: null,
+    categoriesTimestamp: 0,
+    lastUsageRead: 0,
     lastUsageWrite: 0,
     pendingTimeUpdates: new Map(), // categoryKey -> seconds to add
     pendingDomainUpdates: new Map(), // "categoryKey:domain" -> seconds to add
@@ -140,8 +143,10 @@ export async function flushPendingTimeUpdates() {
 
     if (hasChanges) {
         await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
+        const now = Date.now();
         storageCache.usage = usage;
-        storageCache.lastUsageWrite = Date.now();
+        storageCache.lastUsageRead = now;
+        storageCache.lastUsageWrite = now;
         console.log(`[StorageCache] Flushed ${storageCache.pendingTimeUpdates.size} category updates, ${storageCache.pendingDomainUpdates.size} domain updates`);
     }
 
@@ -153,10 +158,11 @@ export async function flushPendingTimeUpdates() {
  * Get cached usage data (reads from storage if cache is stale)
  */
 async function getCachedUsage() {
-    // Cache for 5 seconds
-    if (!storageCache.usage || Date.now() - storageCache.lastUsageWrite > 5000) {
+    const now = Date.now();
+    if (!storageCache.usage || now - storageCache.lastUsageRead > 5000) {
         const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
         storageCache.usage = data[STORAGE_KEYS.USAGE] || {};
+        storageCache.lastUsageRead = now;
     }
     return storageCache.usage;
 }
@@ -382,17 +388,32 @@ export async function initializeStorage() {
 
     if (Object.keys(updates).length > 0) {
         await chrome.storage.local.set(updates);
+        invalidateCategoriesCache();
     }
 
     return { ...data, ...updates };
 }
 
 /**
- * Get all categories configuration
+ * Get all categories configuration (cached — categories change rarely)
  */
 export async function getCategories() {
+    const now = Date.now();
+    if (storageCache.categories && now - storageCache.categoriesTimestamp < 30000) {
+        return storageCache.categories;
+    }
     const data = await chrome.storage.local.get(STORAGE_KEYS.CATEGORIES);
-    return data[STORAGE_KEYS.CATEGORIES] || DEFAULT_CATEGORIES;
+    storageCache.categories = data[STORAGE_KEYS.CATEGORIES] || DEFAULT_CATEGORIES;
+    storageCache.categoriesTimestamp = now;
+    return storageCache.categories;
+}
+
+/**
+ * Invalidate the categories cache (called when categories are modified)
+ */
+export function invalidateCategoriesCache() {
+    storageCache.categories = null;
+    storageCache.categoriesTimestamp = 0;
 }
 
 /**
@@ -402,6 +423,7 @@ export async function updateCategory(categoryKey, config) {
     const categories = await getCategories();
     categories[categoryKey] = { ...categories[categoryKey], ...config };
     await chrome.storage.local.set({ [STORAGE_KEYS.CATEGORIES]: categories });
+    invalidateCategoriesCache();
     return categories[categoryKey];
 }
 
@@ -444,11 +466,10 @@ export async function updateSettings(newSettings) {
 // =====================
 
 /**
- * Get usage for today
+ * Get usage for today (uses cache to avoid redundant storage reads)
  */
 export async function getTodayUsage() {
-    const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
-    const usage = data[STORAGE_KEYS.USAGE] || {};
+    const usage = await getCachedUsage();
     const todayKey = getTodayKey();
     return usage[todayKey] || {};
 }
@@ -608,11 +629,17 @@ export async function endCategorySessionForDate(categoryKey, dateKey) {
 // =====================
 
 /**
- * Get active state for all categories
+ * Get active state for all categories (cached for 2s — changes on session start/end)
  */
 export async function getActiveState() {
+    const now = Date.now();
+    if (storageCache.activeState && now - storageCache.activeStateTimestamp < 2000) {
+        return storageCache.activeState;
+    }
     const data = await chrome.storage.local.get(STORAGE_KEYS.ACTIVE_STATE);
-    return data[STORAGE_KEYS.ACTIVE_STATE] || {};
+    storageCache.activeState = data[STORAGE_KEYS.ACTIVE_STATE] || {};
+    storageCache.activeStateTimestamp = now;
+    return storageCache.activeState;
 }
 
 /**
@@ -635,6 +662,8 @@ export async function updateCategoryActiveState(categoryKey, newState) {
     const state = await getActiveState();
     state[categoryKey] = { ...state[categoryKey], ...newState };
     await chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_STATE]: state });
+    storageCache.activeState = state;
+    storageCache.activeStateTimestamp = Date.now();
     return state[categoryKey];
 }
 
@@ -643,6 +672,8 @@ export async function updateCategoryActiveState(categoryKey, newState) {
  */
 export async function clearActiveStates() {
     await chrome.storage.local.set({ [STORAGE_KEYS.ACTIVE_STATE]: {} });
+    storageCache.activeState = {};
+    storageCache.activeStateTimestamp = Date.now();
 }
 
 // =====================
@@ -690,8 +721,9 @@ export async function performDailyReset() {
     // Users will start fresh sessions when they visit sites
     await clearActiveStates();
 
-    // Clear the usage cache to force fresh read
+    // Clear caches to force fresh reads
     storageCache.usage = null;
+    storageCache.lastUsageRead = 0;
 
     console.log('[DailyReset] Daily reset completed - all sessions ended and states cleared');
 }
@@ -1056,5 +1088,5 @@ export function getPendingTimeUpdates() {
     return pending;
 }
 
-export { STORAGE_KEYS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS, DATA_RETENTION_DAYS };
+export { STORAGE_KEYS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS, DATA_RETENTION_DAYS, invalidateCategoriesCache };
 
