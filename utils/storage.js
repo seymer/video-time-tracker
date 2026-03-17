@@ -1088,5 +1088,5 @@ export function getPendingTimeUpdates() {
     return pending;
 }
 
-export { STORAGE_KEYS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS, DATA_RETENTION_DAYS, invalidateCategoriesCache };
+export { STORAGE_KEYS, DEFAULT_CATEGORIES, DEFAULT_SETTINGS, DATA_RETENTION_DAYS };
 
