@@ -447,9 +447,19 @@ export async function updateSettings(newSettings) {
  * Get usage for today
  */
 export async function getTodayUsage() {
+    // Check if date changed since last access - if so, perform reset
+    // This ensures proper reset even if midnight alarm didn't trigger
+    const todayKey = getTodayKey();
+    const lastKnownDateKey = storageCache.lastKnownDateKey;
+
+    if (lastKnownDateKey && lastKnownDateKey !== todayKey) {
+        console.log(`[DateChange] Date changed from ${lastKnownDateKey} to ${todayKey}, performing reset`);
+        await performDailyReset();
+    }
+    storageCache.lastKnownDateKey = todayKey;
+
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
-    const todayKey = getTodayKey();
     return usage[todayKey] || {};
 }
 
