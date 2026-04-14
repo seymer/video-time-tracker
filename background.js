@@ -141,6 +141,16 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup.addListener(async () => {
     console.log('Advanced Time Tracker starting');
     await initializeStorage();
+
+    // Check if date changed since last run - reset if needed
+    // This ensures proper reset even if midnight alarm didn't fire
+    const currentDateKey = getTodayKey();
+    if (lastDateKey && lastDateKey !== currentDateKey) {
+        console.log(`[DateChange] Date changed from ${lastDateKey} to ${currentDateKey} on startup`);
+        await handleMidnightReset();
+    }
+    lastDateKey = currentDateKey;
+
     await registerDynamicContentScripts();
     await setupAlarms();
     await cleanupOldData();

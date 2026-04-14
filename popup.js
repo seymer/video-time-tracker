@@ -41,14 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function loadStatus() {
     try {
-        const data = await chrome.storage.local.get(['categories', 'usage', 'activeState']);
-        const categories = data.categories || {};
-        const usage = data.usage || {};
-        const activeState = data.activeState || {};
-        const today = getTodayKey();
-        const todayUsage = usage[today] || {};
+        // Get all category status from background - this triggers date change check
+        const allStatus = await chrome.runtime.sendMessage({ type: 'GET_ALL_STATUS' });
 
-        // Get pending time updates from background to ensure accurate display
+        // Also get pending time updates
         let pendingTime = {};
         try {
             pendingTime = await chrome.runtime.sendMessage({ type: 'GET_PENDING_TIME' }) || {};
@@ -56,17 +52,17 @@ async function loadStatus() {
             console.warn('Could not get pending time:', e);
         }
 
-        renderCategories(categories, todayUsage, activeState, pendingTime);
+        renderCategoriesFromStatus(allStatus, pendingTime);
     } catch (error) {
         console.error('Error loading status:', error);
         document.getElementById('categoryList').innerHTML = `<p class="empty-state">${i18n('popupErrorLoading')}</p>`;
     }
 }
 
-function renderCategories(categories, todayUsage, activeState, pendingTime = {}) {
+function renderCategoriesFromStatus(allStatus, pendingTime = {}) {
     const container = document.getElementById('categoryList');
 
-    if (Object.keys(categories).length === 0) {
+    if (!allStatus || Object.keys(allStatus).length === 0) {
         container.innerHTML = `
             <div class="empty-state">
                 <p>${i18n('popupNoCategories')}</p>
@@ -76,20 +72,22 @@ function renderCategories(categories, todayUsage, activeState, pendingTime = {})
         return;
     }
 
-    container.innerHTML = Object.entries(categories).map(([key, category]) => {
-        const categoryUsage = todayUsage[key] || { totalTime: 0, sessions: [] };
-        const state = activeState[key] || {};
+    container.innerHTML = Object.entries(allStatus).map(([categoryKey, status]) => {
+        const category = status.category;
+        const usage = status.usage;
+        const state = status.state;
+
+        if (!category) return '';
 
         // Include pending time for accurate display
-        const pending = pendingTime[key] || 0;
-        const totalTimeWithPending = categoryUsage.totalTime + pending;
+        const pending = pendingTime[categoryKey] || 0;
+        const totalTimeWithPending = usage.totalTime + pending;
 
         const percentage = category.dailyLimit
             ? Math.min(100, (totalTimeWithPending / category.dailyLimit) * 100)
             : 0;
 
-        const completedSessions = categoryUsage.sessions?.filter(s => s.end).length || 0;
-        const sessionsUsed = completedSessions + (state.inSession ? 1 : 0);
+        const sessionsUsed = usage.sessionsCompleted + (state.inSession ? 1 : 0);
 
         let progressClass = '';
         if (percentage >= 100) progressClass = 'danger';
@@ -125,11 +123,6 @@ function renderCategories(categories, todayUsage, activeState, pendingTime = {})
             </div>
         `;
     }).join('');
-}
-
-function getTodayKey() {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
 function formatTime(seconds) {
