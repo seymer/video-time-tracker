@@ -444,36 +444,42 @@ export async function updateSettings(newSettings) {
 // =====================
 
 /**
- * Get usage for today
+ * Check if date has changed and perform reset if needed.
+ * Uses persistent storage for lastKnownDateKey to survive Service Worker restarts.
+ * @returns {Promise<{changed: boolean, message?: string}>}
  */
-export async function getTodayUsage() {
-    // Check if date changed since last access - if so, perform reset
-    // This ensures proper reset even if midnight alarm didn't trigger
+export async function checkDateAndResetIfNeeded() {
     const todayKey = getTodayKey();
-    const lastKnownDateKey = storageCache.lastKnownDateKey;
+    
+    // Get last known date from persistent storage
+    const meta = await chrome.storage.local.get('lastKnownDateKey');
+    const lastKnownDateKey = meta.lastKnownDateKey;
 
     if (lastKnownDateKey && lastKnownDateKey !== todayKey) {
         console.log(`[DateChange] Date changed from ${lastKnownDateKey} to ${todayKey}, performing reset`);
         await performDailyReset();
-
-        // Also clear any old session data in today's date (in case it existed from previous day)
-        const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
-        const usage = data[STORAGE_KEYS.USAGE] || {};
-        if (usage[todayKey]) {
-            // Clear sessions and reset totalTime for the new day
-            for (const categoryKey of Object.keys(usage[todayKey])) {
-                usage[todayKey][categoryKey] = {
-                    totalTime: 0,
-                    sessions: [],
-                    byDomain: usage[todayKey][categoryKey].byDomain || {}
-                };
-            }
-            await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
-            console.log(`[DateChange] Cleared old session data for today`);
-        }
+        
+        // Save new date to persistent storage
+        await chrome.storage.local.set({ lastKnownDateKey: todayKey });
+        
+        return { 
+            changed: true, 
+            message: `Date changed from ${lastKnownDateKey} to ${todayKey}, daily reset performed`
+        };
     }
-    storageCache.lastKnownDateKey = todayKey;
+    
+    // Always update lastKnownDateKey to today (first run or same day)
+    await chrome.storage.local.set({ lastKnownDateKey: todayKey });
+    
+    return { changed: false };
+}
 
+/**
+ * Get usage for today
+ * Pure query function - no side effects. Call checkDateAndResetIfNeeded() first if needed.
+ */
+export async function getTodayUsage() {
+    const todayKey = getTodayKey();
     const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
     const usage = data[STORAGE_KEYS.USAGE] || {};
     return usage[todayKey] || {};
@@ -1059,12 +1065,9 @@ export async function getUsageStats(startDate, endDate) {
 
 /**
  * Get today's statistics
- * Note: This triggers a date change check via getTodayUsage() to ensure data is fresh
+ * Note: Call checkDateAndResetIfNeeded() before this if you need up-to-date data
  */
 export async function getTodayStats() {
-    // Trigger date change check to ensure data is fresh
-    await getTodayUsage();
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const endOfDay = new Date(today);
@@ -1075,24 +1078,18 @@ export async function getTodayStats() {
 
 /**
  * Get this week's statistics
- * Note: This triggers a date change check via getTodayUsage() to ensure today's data is fresh
+ * Note: Call checkDateAndResetIfNeeded() before this if you need up-to-date data
  */
 export async function getWeekStats() {
-    // Trigger date change check to ensure today's data is fresh
-    await getTodayUsage();
-
     const { start, end } = getCurrentWeekRange();
     return getUsageStats(start, end);
 }
 
 /**
  * Get this month's statistics
- * Note: This triggers a date change check via getTodayUsage() to ensure today's data is fresh
+ * Note: Call checkDateAndResetIfNeeded() before this if you need up-to-date data
  */
 export async function getMonthStats() {
-    // Trigger date change check to ensure today's data is fresh
-    await getTodayUsage();
-
     const { start, end } = getCurrentMonthRange();
     return getUsageStats(start, end);
 }

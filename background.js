@@ -6,6 +6,7 @@
 import {
     initializeStorage,
     getTodayKey,
+    checkDateAndResetIfNeeded,
     getCategories,
     getCategoryForDomain,
     getCategoryUsage,
@@ -297,8 +298,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true; // Keep channel open for async response
 });
 
+// Message types that require up-to-date data (may trigger date reset)
+const DATE_SENSITIVE_MESSAGES = new Set([
+    'CAN_ACCESS',
+    'START_SESSION',
+    'GET_STATUS',
+    'GET_ALL_STATUS',
+    'GET_TODAY_STATS',
+    'GET_WEEK_STATS',
+    'GET_MONTH_STATS'
+]);
+
 async function handleMessage(message, sender) {
     try {
+        // Check date change for messages that need fresh data
+        if (DATE_SENSITIVE_MESSAGES.has(message.type)) {
+            await checkDateAndResetIfNeeded();
+        }
+
         switch (message.type) {
             case 'GET_CATEGORY_FOR_DOMAIN':
                 return await getCategoryForDomain(message.domain);

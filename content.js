@@ -477,48 +477,57 @@ function setupNavigationObserver() {
 
     // Method 3: Fallback - periodic check (less frequent than MutationObserver)
     // This catches any edge cases the above methods might miss
-    const checkInterval = setInterval(() => {
-        if (window.location.href !== lastUrl) {
+    const navigationState = {
+        checkInterval: null,
+        urlChangeTimeout: null,
+        lastUrl: window.location.href
+    };
+
+    navigationState.checkInterval = setInterval(() => {
+        if (window.location.href !== navigationState.lastUrl) {
             handleUrlChange();
         }
     }, 2000);
 
-    // Store timeout ID for cleanup
-    let urlChangeTimeout = null;
-
     function handleUrlChange() {
         const newUrl = window.location.href;
-        if (newUrl === lastUrl) return;
+        if (newUrl === navigationState.lastUrl) return;
 
-        lastUrl = newUrl;
+        navigationState.lastUrl = newUrl;
         console.log('[TimeTracker] URL changed:', newUrl);
 
         // Debounce rapid URL changes
-        if (urlChangeTimeout) {
-            clearTimeout(urlChangeTimeout);
+        if (navigationState.urlChangeTimeout) {
+            clearTimeout(navigationState.urlChangeTimeout);
         }
-        urlChangeTimeout = setTimeout(() => {
-            urlChangeTimeout = null;
+        navigationState.urlChangeTimeout = setTimeout(() => {
+            navigationState.urlChangeTimeout = null;
             handleNavigation();
         }, 100);
     }
 
+    // Single cleanup function
+    function cleanupNavigation() {
+        if (navigationState.checkInterval) {
+            clearInterval(navigationState.checkInterval);
+            navigationState.checkInterval = null;
+        }
+        if (navigationState.urlChangeTimeout) {
+            clearTimeout(navigationState.urlChangeTimeout);
+            navigationState.urlChangeTimeout = null;
+        }
+    }
+
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
-        clearInterval(checkInterval);
-        if (urlChangeTimeout) {
-            clearTimeout(urlChangeTimeout);
-        }
+        cleanupNavigation();
         cleanup();
     });
 
-    // Clean up on visibility change (SPA navigation)
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'hidden' && contextInvalidated) {
-            clearInterval(checkInterval);
-            if (urlChangeTimeout) {
-                clearTimeout(urlChangeTimeout);
-            }
+    // Clean up when context is invalidated
+    window.addEventListener('pagehide', () => {
+        if (contextInvalidated) {
+            cleanupNavigation();
         }
     });
 }
