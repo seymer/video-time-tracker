@@ -692,18 +692,34 @@ export async function performDailyReset() {
 
     console.log(`[DailyReset] Starting reset. Yesterday: ${yesterdayKey}, Today: ${todayKey}`);
 
+    // Calculate midnight timestamp once
+    const midnightToday = new Date();
+    midnightToday.setHours(0, 0, 0, 0);
+    const midnightTimestamp = midnightToday.getTime();
+
     // Process each category's active state
     for (const [categoryKey, state] of Object.entries(activeState)) {
         if (state.inSession && state.sessionStart) {
-            // Calculate how much of the session was in yesterday
-            const midnightToday = new Date();
-            midnightToday.setHours(0, 0, 0, 0);
-            const midnightTimestamp = midnightToday.getTime();
+            // Calculate how much of the session was in yesterday vs today
+            const sessionStart = state.sessionStart;
+            const timeBeforeMidnight = Math.max(0, midnightTimestamp - sessionStart);
+            const timeAfterMidnight = Math.max(0, now - midnightTimestamp);
 
-            // End the session using yesterday's date key
+            // End the session using yesterday's date key (time before midnight)
+            // This ensures yesterday's usage is properly accounted
             await endCategorySessionForDate(categoryKey, yesterdayKey);
 
-            console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday`);
+            console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday (${Math.floor(timeBeforeMidnight/1000)}s before midnight)`);
+
+            // If session continued past midnight, add that time to today
+            if (timeAfterMidnight > 0) {
+                const secondsAfterMidnight = Math.floor(timeAfterMidnight / 1000);
+                // Add time to today's usage
+                await addCategoryTimeImmediate(categoryKey, secondsAfterMidnight);
+                // Start a new session for today
+                await startCategorySession(categoryKey);
+                console.log(`[DailyReset] Started new session for ${categoryKey} today (${secondsAfterMidnight}s after midnight)`);
+            }
         }
 
         // Clear rest periods - they don't carry over to the new day
@@ -1043,8 +1059,12 @@ export async function getUsageStats(startDate, endDate) {
 
 /**
  * Get today's statistics
+ * Note: This triggers a date change check via getTodayUsage() to ensure data is fresh
  */
 export async function getTodayStats() {
+    // Trigger date change check to ensure data is fresh
+    await getTodayUsage();
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const endOfDay = new Date(today);
@@ -1055,16 +1075,24 @@ export async function getTodayStats() {
 
 /**
  * Get this week's statistics
+ * Note: This triggers a date change check via getTodayUsage() to ensure today's data is fresh
  */
 export async function getWeekStats() {
+    // Trigger date change check to ensure today's data is fresh
+    await getTodayUsage();
+
     const { start, end } = getCurrentWeekRange();
     return getUsageStats(start, end);
 }
 
 /**
  * Get this month's statistics
+ * Note: This triggers a date change check via getTodayUsage() to ensure today's data is fresh
  */
 export async function getMonthStats() {
+    // Trigger date change check to ensure today's data is fresh
+    await getTodayUsage();
+
     const { start, end } = getCurrentMonthRange();
     return getUsageStats(start, end);
 }

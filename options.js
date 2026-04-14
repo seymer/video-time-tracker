@@ -137,8 +137,17 @@ function switchToPeriod(period) {
 
 async function loadData() {
     try {
-        const data = await chrome.storage.local.get(['categories', 'usage', 'activeState', 'domainLimits']);
-        categories = data.categories || {};
+        // Get all status from background - this triggers date change check
+        const allStatus = await chrome.runtime.sendMessage({ type: 'GET_ALL_STATUS' });
+        categories = {};
+        for (const [key, status] of Object.entries(allStatus)) {
+            if (status.exists) {
+                categories[key] = status.category;
+            }
+        }
+
+        // Get domain limits directly from storage (no date dependency)
+        const data = await chrome.storage.local.get(['domainLimits']);
         domainLimits = data.domainLimits || {};
 
         // Get pending time updates from background to ensure accurate display
@@ -149,7 +158,7 @@ async function loadData() {
             console.warn('Could not get pending time:', e);
         }
 
-        renderUsageSummary(data.usage || {}, data.activeState || {}, pendingTime);
+        renderUsageSummaryFromStatus(allStatus, pendingTime);
         renderCategories();
         renderDomainLimits();
     } catch (error) {
@@ -342,31 +351,30 @@ function renderCategoryBreakdown(stats) {
 // Settings Rendering
 // =====================
 
-function renderUsageSummary(usage, activeState, pendingTime = {}) {
+function renderUsageSummaryFromStatus(allStatus, pendingTime = {}) {
     const container = document.getElementById('usageSummary');
-    const today = getTodayKey();
-    const todayUsage = usage[today] || {};
 
-    if (Object.keys(categories).length === 0) {
+    if (!allStatus || Object.keys(allStatus).length === 0) {
         container.innerHTML = `<p style="color: rgba(255,255,255,0.5)">${i18n('emptyNoCategoriesConfigured')}</p>`;
         return;
     }
 
-    container.innerHTML = Object.entries(categories).map(([key, category]) => {
-        const categoryUsage = todayUsage[key] || { totalTime: 0, sessions: [] };
-        const state = activeState[key] || {};
+    container.innerHTML = Object.entries(allStatus).map(([key, status]) => {
+        if (!status.exists) return '';
+
+        const category = status.category;
+        const usage = status.usage;
+        const state = status.state;
 
         // Include pending time for accurate display
         const pending = pendingTime[key] || 0;
-        const totalTimeWithPending = categoryUsage.totalTime + pending;
+        const totalTimeWithPending = usage.totalTime + pending;
 
         const percentage = category.dailyLimit
             ? Math.min(100, (totalTimeWithPending / category.dailyLimit) * 100)
             : 0;
 
-        const completedSessions = categoryUsage.sessions?.filter(s => s.end).length || 0;
-        const inSession = state.inSession;
-        const sessionsUsed = completedSessions + (inSession ? 1 : 0);
+        const sessionsUsed = usage.sessionsCompleted + (state.inSession ? 1 : 0);
 
         let progressClass = '';
         if (percentage >= 100) progressClass = 'danger';

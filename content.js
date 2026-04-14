@@ -483,6 +483,9 @@ function setupNavigationObserver() {
         }
     }, 2000);
 
+    // Store timeout ID for cleanup
+    let urlChangeTimeout = null;
+
     function handleUrlChange() {
         const newUrl = window.location.href;
         if (newUrl === lastUrl) return;
@@ -491,8 +494,11 @@ function setupNavigationObserver() {
         console.log('[TimeTracker] URL changed:', newUrl);
 
         // Debounce rapid URL changes
-        clearTimeout(handleUrlChange.timeout);
-        handleUrlChange.timeout = setTimeout(() => {
+        if (urlChangeTimeout) {
+            clearTimeout(urlChangeTimeout);
+        }
+        urlChangeTimeout = setTimeout(() => {
+            urlChangeTimeout = null;
             handleNavigation();
         }, 100);
     }
@@ -500,7 +506,20 @@ function setupNavigationObserver() {
     // Clean up on page unload
     window.addEventListener('beforeunload', () => {
         clearInterval(checkInterval);
+        if (urlChangeTimeout) {
+            clearTimeout(urlChangeTimeout);
+        }
         cleanup();
+    });
+
+    // Clean up on visibility change (SPA navigation)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && contextInvalidated) {
+            clearInterval(checkInterval);
+            if (urlChangeTimeout) {
+                clearTimeout(urlChangeTimeout);
+            }
+        }
     });
 }
 
