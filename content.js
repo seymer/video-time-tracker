@@ -286,7 +286,7 @@ function showBlockedOverlay(access) {
         if (restDuration) {
             countdown = `<span class="countdown" data-end="${Date.now() + restDuration * 1000}">${i18n('overlayRemaining', formatSeconds(restDuration))}</span>`;
         }
-    } else if (access.reason === 'daily_limit') {
+    } else if (access.reason === 'daily_limit' || access.reason === 'daily_limit_reached') {
         title = '📅 ' + i18n('overlayDailyLimitReached');
         message = i18n('overlayDailyLimitMsg');
         countdown = i18n('overlayResetsMidnight');
@@ -345,6 +345,7 @@ function getIconForReason(reason) {
         'rest_period': '☕',
         'session_limit_reached': '⏰',
         'daily_limit': '📅',
+        'daily_limit_reached': '📅',
         'sessions_exhausted': '🎯',
         'domain_limit': '🌐'
     };

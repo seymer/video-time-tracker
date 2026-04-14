@@ -196,7 +196,7 @@ export async function addEffectiveTime(categoryKey, seconds) {
     const category = categories[categoryKey];
 
     if (!category || !category.enabled) {
-        return { allowed: true };
+        return { allowed: true, timeAdded: 0 };
     }
 
     // Get current usage and state BEFORE adding so we can cap at both daily and session limits
@@ -245,7 +245,8 @@ export async function addEffectiveTime(categoryKey, seconds) {
                 sessionEnded: true,
                 restStarted: true,
                 restDuration: category.restDuration,
-                sessionEffectiveTime
+                sessionEffectiveTime,
+                timeAdded: secondsToAdd
             };
         }
     }
@@ -260,7 +261,8 @@ export async function addEffectiveTime(categoryKey, seconds) {
             reasonText: 'Daily time limit reached',
             sessionEnded: true,
             totalTime: usage.totalTime,
-            dailyLimit: category.dailyLimit
+            dailyLimit: category.dailyLimit,
+            timeAdded: secondsToAdd
         };
     }
 

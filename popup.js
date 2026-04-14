@@ -42,24 +42,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function loadStatus() {
     try {
         // Get all category status from background - this triggers date change check
+        // Note: getCategoryStatus already includes pending time via getCategoryUsage
         const allStatus = await chrome.runtime.sendMessage({ type: 'GET_ALL_STATUS' });
 
-        // Also get pending time updates
-        let pendingTime = {};
-        try {
-            pendingTime = await chrome.runtime.sendMessage({ type: 'GET_PENDING_TIME' }) || {};
-        } catch (e) {
-            console.warn('Could not get pending time:', e);
-        }
-
-        renderCategoriesFromStatus(allStatus, pendingTime);
+        renderCategoriesFromStatus(allStatus);
     } catch (error) {
         console.error('Error loading status:', error);
         document.getElementById('categoryList').innerHTML = `<p class="empty-state">${i18n('popupErrorLoading')}</p>`;
     }
 }
 
-function renderCategoriesFromStatus(allStatus, pendingTime = {}) {
+function renderCategoriesFromStatus(allStatus) {
     const container = document.getElementById('categoryList');
 
     if (!allStatus || Object.keys(allStatus).length === 0) {
@@ -79,12 +72,11 @@ function renderCategoriesFromStatus(allStatus, pendingTime = {}) {
 
         if (!category) return '';
 
-        // Include pending time for accurate display
-        const pending = pendingTime[categoryKey] || 0;
-        const totalTimeWithPending = usage.totalTime + pending;
+        // usage.totalTime already includes pending time (via getCategoryUsage)
+        const totalTime = usage.totalTime;
 
         const percentage = category.dailyLimit
-            ? Math.min(100, (totalTimeWithPending / category.dailyLimit) * 100)
+            ? Math.min(100, (totalTime / category.dailyLimit) * 100)
             : 0;
 
         const sessionsUsed = usage.sessionsCompleted + (state.inSession ? 1 : 0);
@@ -110,7 +102,7 @@ function renderCategoriesFromStatus(allStatus, pendingTime = {}) {
                     <span class="category-name">${category.name}</span>
                     <span class="category-status ${statusClass}">${statusText}</span>
                 </div>
-                <div class="time-display">${formatTime(totalTimeWithPending)}</div>
+                <div class="time-display">${formatTime(totalTime)}</div>
                 <div class="time-limit">${i18n('ofLimit', formatTime(category.dailyLimit))} daily limit</div>
                 <div class="progress-bar">
                     <div class="progress-fill ${progressClass}" style="width: ${percentage}%"></div>

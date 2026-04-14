@@ -150,15 +150,8 @@ async function loadData() {
         const data = await chrome.storage.local.get(['domainLimits']);
         domainLimits = data.domainLimits || {};
 
-        // Get pending time updates from background to ensure accurate display
-        let pendingTime = {};
-        try {
-            pendingTime = await chrome.runtime.sendMessage({ type: 'GET_PENDING_TIME' }) || {};
-        } catch (e) {
-            console.warn('Could not get pending time:', e);
-        }
-
-        renderUsageSummaryFromStatus(allStatus, pendingTime);
+        // getCategoryStatus already includes pending time via getCategoryUsage
+        renderUsageSummaryFromStatus(allStatus);
         renderCategories();
         renderDomainLimits();
     } catch (error) {
@@ -260,7 +253,7 @@ function renderChart(stats, period) {
         if (period === 'day') {
             label = i18n('periodToday');
         } else if (period === 'week') {
-            label = d.toLocaleDateString('en-US', { weekday: 'short' });
+            label = d.toLocaleDateString(undefined, { weekday: 'short' });
         } else {
             label = d.getDate();
         }
@@ -351,7 +344,7 @@ function renderCategoryBreakdown(stats) {
 // Settings Rendering
 // =====================
 
-function renderUsageSummaryFromStatus(allStatus, pendingTime = {}) {
+function renderUsageSummaryFromStatus(allStatus) {
     const container = document.getElementById('usageSummary');
 
     if (!allStatus || Object.keys(allStatus).length === 0) {
@@ -366,12 +359,11 @@ function renderUsageSummaryFromStatus(allStatus, pendingTime = {}) {
         const usage = status.usage;
         const state = status.state;
 
-        // Include pending time for accurate display
-        const pending = pendingTime[key] || 0;
-        const totalTimeWithPending = usage.totalTime + pending;
+        // usage.totalTime already includes pending time (via getCategoryUsage)
+        const totalTime = usage.totalTime;
 
         const percentage = category.dailyLimit
-            ? Math.min(100, (totalTimeWithPending / category.dailyLimit) * 100)
+            ? Math.min(100, (totalTime / category.dailyLimit) * 100)
             : 0;
 
         const sessionsUsed = usage.sessionsCompleted + (state.inSession ? 1 : 0);
@@ -383,7 +375,7 @@ function renderUsageSummaryFromStatus(allStatus, pendingTime = {}) {
         return `
             <div class="usage-item">
                 <div class="category-name">${category.name}</div>
-                <div class="time-used">${formatTime(totalTimeWithPending)}</div>
+                <div class="time-used">${formatTime(totalTime)}</div>
                 <div class="time-limit">${i18n('ofLimit', formatTime(category.dailyLimit))}</div>
                 <div class="progress-bar">
                     <div class="progress-fill ${progressClass}" style="width: ${percentage}%"></div>
@@ -752,14 +744,8 @@ async function clearAllData() {
         if (confirm('Are you REALLY sure?')) {
             await chrome.storage.local.clear();
 
-            // Reinitialize with defaults
-            await chrome.storage.local.set({
-                categories: {},
-                usage: {},
-                activeState: {},
-                settings: {},
-                domainLimits: {}
-            });
+            // Re-initialize storage with proper defaults (categories, settings, etc.)
+            await chrome.runtime.sendMessage({ type: 'REINITIALIZE' });
 
             await loadData();
             await loadStats(currentPeriod);

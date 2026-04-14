@@ -9,11 +9,8 @@ import {
     checkDateAndResetIfNeeded,
     getCategories,
     getCategoryForDomain,
-    getCategoryUsage,
     performDailyReset,
     cleanupOldData,
-    getCategoryActiveState,
-    updateCategoryActiveState,
     formatTime,
     matchDomain,
     addDomainTime,
@@ -377,6 +374,9 @@ async function handleMessage(message, sender) {
             case 'GET_PENDING_TIME':
                 return getPendingTimeUpdates();
 
+            case 'REINITIALIZE':
+                return await initializeStorage();
+
             default:
                 console.warn('Unknown message type:', message.type);
                 return { error: 'Unknown message type' };
@@ -434,28 +434,13 @@ async function handleAddTime(categoryKey, domain, seconds, sender) {
             }
         }
 
-        // Cap time at daily limit and session duration so access is cut off immediately when limit is reached
-        const categories = await getCategories();
-        const category = categories[categoryKey];
-        let secondsToAdd = seconds;
-        const usage = await getCategoryUsage(categoryKey);
-        const activeState = await getCategoryActiveState(categoryKey);
+        // addEffectiveTime handles capping at daily/session limits — don't cap here too
+        const result = await addEffectiveTime(categoryKey, seconds);
 
-        if (category?.dailyLimit != null && category.dailyLimit > 0) {
-            const dailyHeadroom = Math.max(0, category.dailyLimit - usage.totalTime);
-            if (secondsToAdd > dailyHeadroom) secondsToAdd = dailyHeadroom;
+        // Track domain time using the capped amount that was actually added
+        if (domain && result.timeAdded) {
+            await addDomainTime(categoryKey, domain, result.timeAdded);
         }
-        if (category?.sessionDuration != null && category.sessionDuration > 0 && activeState.inSession) {
-            const sessionEffective = activeState.sessionEffectiveTime || 0;
-            const sessionHeadroom = Math.max(0, category.sessionDuration - sessionEffective);
-            if (secondsToAdd > sessionHeadroom) secondsToAdd = sessionHeadroom;
-        }
-
-        if (domain) {
-            await addDomainTime(categoryKey, domain, secondsToAdd);
-        }
-
-        const result = await addEffectiveTime(categoryKey, secondsToAdd);
 
         // If limit was reached, broadcast to all tabs with this category
         if (!result.allowed) {
