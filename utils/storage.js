@@ -455,6 +455,22 @@ export async function getTodayUsage() {
     if (lastKnownDateKey && lastKnownDateKey !== todayKey) {
         console.log(`[DateChange] Date changed from ${lastKnownDateKey} to ${todayKey}, performing reset`);
         await performDailyReset();
+
+        // Also clear any old session data in today's date (in case it existed from previous day)
+        const data = await chrome.storage.local.get(STORAGE_KEYS.USAGE);
+        const usage = data[STORAGE_KEYS.USAGE] || {};
+        if (usage[todayKey]) {
+            // Clear sessions and reset totalTime for the new day
+            for (const categoryKey of Object.keys(usage[todayKey])) {
+                usage[todayKey][categoryKey] = {
+                    totalTime: 0,
+                    sessions: [],
+                    byDomain: usage[todayKey][categoryKey].byDomain || {}
+                };
+            }
+            await chrome.storage.local.set({ [STORAGE_KEYS.USAGE]: usage });
+            console.log(`[DateChange] Cleared old session data for today`);
+        }
     }
     storageCache.lastKnownDateKey = todayKey;
 
