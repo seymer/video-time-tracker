@@ -798,10 +798,12 @@ class ReadingDetector {
         this.pollInterval = null;
         this.accumulatedTime = 0;
         this.lastReportTime = Date.now();
+        this.lastCheckTime = Date.now();
         this.boundHandlers = {};
     }
 
     start() {
+        this.lastCheckTime = Date.now();
         this.setupEventListeners();
         this.startPolling();
     }
@@ -838,10 +840,13 @@ class ReadingDetector {
 
     checkActivity() {
         const now = Date.now();
+        const elapsed = (now - this.lastCheckTime) / 1000;
+        this.lastCheckTime = now;
         const isActive = this.isVisible && (now - this.lastInteraction) < this.idleTimeout;
 
         if (isActive) {
-            this.accumulatedTime += 1;
+            // Use real elapsed time instead of fixed +1 to avoid setInterval drift
+            this.accumulatedTime += Math.min(elapsed, 2);  // cap at 2s to ignore long suspensions
             if (now - this.lastReportTime >= 5000) {
                 this.reportAccumulatedTime();
             }
