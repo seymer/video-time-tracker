@@ -691,51 +691,25 @@ export async function performDailyReset() {
     // First, flush any pending time updates to ensure data integrity
     await flushPendingTimeUpdates();
 
-    const now = Date.now();
     const activeState = await getActiveState();
     const yesterdayKey = getYesterdayKey();
-    const todayKey = getTodayKey();
 
-    console.log(`[DailyReset] Starting reset. Yesterday: ${yesterdayKey}, Today: ${todayKey}`);
+    console.log(`[DailyReset] Starting reset. Yesterday: ${yesterdayKey}, Today: ${getTodayKey()}`);
 
-    // Calculate midnight timestamp once
-    const midnightToday = new Date();
-    midnightToday.setHours(0, 0, 0, 0);
-    const midnightTimestamp = midnightToday.getTime();
-
-    // Process each category's active state
+    // End any open sessions from yesterday — do NOT inject wall-clock time
+    // into today's usage or start new sessions here. Content scripts will
+    // re-initialise themselves when they receive the DAILY_RESET message.
     for (const [categoryKey, state] of Object.entries(activeState)) {
         if (state.inSession && state.sessionStart) {
-            // Calculate how much of the session was in yesterday vs today
-            const sessionStart = state.sessionStart;
-            const timeBeforeMidnight = Math.max(0, midnightTimestamp - sessionStart);
-            const timeAfterMidnight = Math.max(0, now - midnightTimestamp);
-
-            // End the session using yesterday's date key (time before midnight)
-            // This ensures yesterday's usage is properly accounted
             await endCategorySessionForDate(categoryKey, yesterdayKey);
-
-            console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday (${Math.floor(timeBeforeMidnight/1000)}s before midnight)`);
-
-            // If session continued past midnight, add that time to today
-            if (timeAfterMidnight > 0) {
-                const secondsAfterMidnight = Math.floor(timeAfterMidnight / 1000);
-                // Add time to today's usage
-                await addCategoryTimeImmediate(categoryKey, secondsAfterMidnight);
-                // Start a new session for today
-                await startCategorySession(categoryKey);
-                console.log(`[DailyReset] Started new session for ${categoryKey} today (${secondsAfterMidnight}s after midnight)`);
-            }
+            console.log(`[DailyReset] Ended session for ${categoryKey} from yesterday`);
         }
-
-        // Clear rest periods - they don't carry over to the new day
         if (state.inRest) {
             console.log(`[DailyReset] Clearing rest period for ${categoryKey}`);
         }
     }
 
     // Clear all active states for the new day
-    // Users will start fresh sessions when they visit sites
     await clearActiveStates();
 
     // Clear the usage cache to force fresh read
